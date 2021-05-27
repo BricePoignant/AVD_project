@@ -118,8 +118,8 @@ camera_parameters = {}
 camera_parameters['x'] = 1.8
 camera_parameters['y'] = 0
 camera_parameters['z'] = 1.3
-camera_parameters['width'] = 800
-camera_parameters['height'] = 400
+camera_parameters['width'] = 416
+camera_parameters['height'] = 416
 camera_parameters['fov'] = 90
 
 camera_parameters['yaw'] = 0 
@@ -282,7 +282,7 @@ def obstacle_to_world(location, dimensions, orientation):
         box_pts.append([cpos[0,j], cpos[1,j]])
     
     return box_pts
-def check_for_traffic_light(self,sensor_data,camera_parameters):
+def check_for_traffic_light(sensor_data,camera_parameters):
 
     showing_dims=(camera_parameters['width'],camera_parameters['height'])
     if sensor_data.get("CameraRGB", None) is not None:
@@ -292,11 +292,17 @@ def check_for_traffic_light(self,sensor_data,camera_parameters):
         image_RGB = cv2.resize(image_RGB, showing_dims)
         image_RGB = image_RGB / 255
         image_RGB = np.expand_dims(image_RGB, 0)
-        plt_image, netout = self.detect_image(image_RGB, image_BGR, self._model)
+        plt_image, netout = detect_image(image_RGB, image_BGR, model)
+        cv2.imshow("BGRA_IMAGE",plt_image)
+        cv2.waitKey(1)
         for box in netout:
             label=box.get_label()
             box_center_x,box_center_y=box.get_center()
-            yield label,box_center_x,box_center_y
+            center_x = int((box.xmin+box_center_x) * camera_parameters['width'])
+            center_y = int((box.ymin+box_center_y) * camera_parameters['height'])
+            return label,center_x,center_y
+        return 2,None,None
+
 def make_carla_settings(args):
     """Make a CarlaSettings object with the settings we need.
     """
@@ -965,9 +971,20 @@ def exec_waypoint_nav_demo(args):
 
                 # Perform a state transition in the behavioural planner.
                 depth_data=sensor_data.get('Depth',None)
-                tl_state,x,y=check_for_traffic_light(sensor_data)
-                tl_depth=traffic_light_depth(x,y,camera_parameters=camera_parameters,depth_data=depth_data)
-                bp.transition_state(waypoints, ego_state, current_speed,tl_depth,tl_state)
+
+                tl_state,x,y=check_for_traffic_light(sensor_data=sensor_data,camera_parameters=camera_parameters)
+                tl_depth=0
+                if tl_state !=2 and depth_data is not None:
+                    depth_data = depth_to_array(depth_data)
+                    print("x,y :",end = '')
+                    print(x,y)
+                    print("tl_state : ", end = '')
+                    print(tl_state)
+                    tl_depth=traffic_light_depth(x,y,camera_parameters=camera_parameters,depth_data=depth_data)
+                    print("tl_depth: ", end = '')
+                    print(tl_depth)
+                bp.transition_state(waypoints, ego_state, current_speed,tl_depth,tl_state, False)
+
 
                 # Compute the goal state set from the behavioural planner's computed goal state.
                 goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
@@ -1079,9 +1096,6 @@ def exec_waypoint_nav_demo(args):
                 throttle_fig.roll("throttle", current_timestamp, cmd_throttle)
                 brake_fig.roll("brake", current_timestamp, cmd_brake)
                 steer_fig.roll("steer", current_timestamp, cmd_steer)
-
-                # Visualize data from sensors
-                visualize_sensor_data(sensor_data)  
 
                 # Local path plotter update
                 if frame % LP_FREQUENCY_DIVISOR == 0:

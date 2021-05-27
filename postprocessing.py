@@ -221,6 +221,6 @@ class BoundBox:
 
         return self.score
     def get_center(self):
-        center_x=(self.xmax-self.xmin)//2
-        center_y=(self.ymax-self.ymin)//2
+        center_x=(self.xmax-self.xmin)/2
+        center_y=(self.ymax-self.ymin)/2
         return center_x,center_y
