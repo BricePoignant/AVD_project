@@ -125,6 +125,7 @@ camera_parameters['fov'] = 90
 camera_parameters['yaw'] = 0 
 camera_parameters['pitch'] = 0
 camera_parameters['roll'] = 0
+#
 
 # Model initialization for detector
 model = get_model_from_file()
@@ -146,7 +147,106 @@ def rotate_z(angle):
                  [ sin(angle),  cos(angle), 0 ],
                  [         0,          0, 1 ]])
     return R
+# Utils : Rotation - XYZ
+def to_rot(r):
+    Rx = np.mat([[ 1,         0,           0],
+                 [ 0, cos(r[0]), -sin(r[0]) ],
+                 [ 0, sin(r[0]),  cos(r[0]) ]])
 
+    Ry = np.mat([[ cos(r[1]), 0,  sin(r[1]) ],
+                 [ 0,         1,          0 ],
+                 [-sin(r[1]), 0,  cos(r[1]) ]])
+
+    Rz = np.mat([[ cos(r[2]), -sin(r[2]), 0 ],
+                 [ sin(r[2]),  cos(r[2]), 0 ],
+                 [         0,          0, 1 ]])
+
+    return Rz*Ry*Rx
+
+def traffic_light_depth (x,y,depth_data,camera_parameters):
+    camera_width = camera_parameters['width']
+    camera_height = camera_parameters['height']
+    camera_fov = camera_parameters['fov']
+
+    cam_yaw = camera_parameters['yaw']
+    cam_pitch = camera_parameters['pitch']
+    cam_roll = camera_parameters['roll']
+
+    cam_x_pos = camera_parameters['x']
+    cam_y_pos = camera_parameters['y']
+    cam_height = camera_parameters['z']
+
+    # Calculate Intrinsic Matrix
+    f = camera_width / (2 * tan(camera_fov * pi / 360))
+    Center_X = camera_width / 2.0
+    Center_Y = camera_height / 2.0
+
+    intrinsic_matrix = np.array([[f, 0, Center_X],
+                                 [0, f, Center_Y],
+                                 [0, 0, 1]])
+
+    inv_intrinsic_matrix = np.linalg.inv(intrinsic_matrix)
+
+    # Rotation matrix to align image frame to camera frame
+    rotation_image_camera_frame = np.dot(rotate_z(-90 * pi / 180), rotate_x(-90 * pi / 180))
+
+    image_camera_frame = np.zeros((4, 4))
+    image_camera_frame[:3, :3] = rotation_image_camera_frame
+    image_camera_frame[:, -1] = [0, 0, 0, 1]
+
+    # Lambda Function for transformation of image frame in camera frame
+    image_to_camera_frame = lambda object_camera_frame: np.dot(image_camera_frame, object_camera_frame)
+
+
+    pixel = [x, y, 1]
+    pixel = np.reshape(pixel, (3, 1))
+
+    # Projection Pixel to Image Frame
+
+    depth = depth_data[y][x] * 1000  # Consider depth in meters
+    return depth
+    '''
+    image_frame_vect = np.dot(inv_intrinsic_matrix, pixel) * depth
+
+    # Create extended vector
+    image_frame_vect_extended = np.zeros((4, 1))
+    image_frame_vect_extended[:3] = image_frame_vect
+    image_frame_vect_extended[-1] = 1
+
+    # Projection Camera to Vehicle Frame
+    image_to_camera_frame = lambda object_camera_frame: np.dot(image_camera_frame, object_camera_frame)
+    camera_frame = image_to_camera_frame(image_frame_vect_extended)
+    camera_frame = camera_frame[:3]
+    camera_frame = np.asarray(np.reshape(camera_frame, (1, 3)))
+
+    camera_frame_extended = np.zeros((4, 1))
+    camera_frame_extended[:3] = camera_frame.T
+    camera_frame_extended[-1] = 1
+
+    camera_to_vehicle_frame = np.zeros((4, 4))
+    camera_to_vehicle_frame[:3, :3] = to_rot([cam_pitch, cam_yaw, cam_roll])
+    camera_to_vehicle_frame[:, -1] = [cam_x_pos, cam_y_pos, cam_height, 1]
+
+    vehicle_frame = np.dot(camera_to_vehicle_frame, camera_frame_extended)
+    vehicle_frame = vehicle_frame[:3]
+    vehicle_frame = np.asarray(np.reshape(vehicle_frame, (1, 3)))
+
+    # Add to vehicle frame list
+    if abs(vehicle_frame[0][1]) < 0.5:
+    # Avoid small correction for a smoother driving
+        vehicle_frame_y = 0
+        vehicle_frame_x = 1.5
+    else:
+        vehicle_frame_y = vehicle_frame[0][1]
+        vehicle_frame_x = vehicle_frame[0][0] - 1.5
+
+    # -vehicle_frame_y for the inversion of the axis with the guide
+    vehicle_frame_list.append([vehicle_frame_x, -vehicle_frame_y, speed_limit])
+
+    # print(vehicle_frame_list)
+
+    return vehicle_frame_list
+    '''
 # Transform the obstacle with its boundary point in the global frame
 def obstacle_to_world(location, dimensions, orientation):
     box_pts = []
@@ -182,7 +282,21 @@ def obstacle_to_world(location, dimensions, orientation):
         box_pts.append([cpos[0,j], cpos[1,j]])
     
     return box_pts
+def check_for_traffic_light(self,sensor_data,camera_parameters):
 
+    showing_dims=(camera_parameters['width'],camera_parameters['height'])
+    if sensor_data.get("CameraRGB", None) is not None:
+        # Camera BGR data
+        image_BGR = to_bgra_array(sensor_data["CameraRGB"])
+        image_RGB = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2RGB)
+        image_RGB = cv2.resize(image_RGB, showing_dims)
+        image_RGB = image_RGB / 255
+        image_RGB = np.expand_dims(image_RGB, 0)
+        plt_image, netout = self.detect_image(image_RGB, image_BGR, self._model)
+        for box in netout:
+            label=box.get_label()
+            box_center_x,box_center_y=box.get_center()
+            yield label,box_center_x,box_center_y
 def make_carla_settings(args):
     """Make a CarlaSettings object with the settings we need.
     """
@@ -508,7 +622,7 @@ def exec_waypoint_nav_demo(args):
               str(SIMULATION_TIME_STEP))
         TOTAL_EPISODE_FRAMES = int((TOTAL_RUN_TIME + WAIT_TIME_BEFORE_START) /\
                                SIMULATION_TIME_STEP) + TOTAL_FRAME_BUFFER
-
+        # un attimo che c'è mio padre che si è vaccinato ,ho dato il controllo a pasquale
         #############################################
         # Frame-by-Frame Iteration and Initialization
         #############################################
@@ -683,7 +797,7 @@ def exec_waypoint_nav_demo(args):
                                  y0=[start_y]*TOTAL_EPISODE_FRAMES,
                                  color=[1, 0.5, 0])
         # Add starting position marker
-        trajectory_fig.add_graph("start_pos", window_size=1, 
+        trajectory_fig.add_graph("start_pos", window_size=1,
                                  x0=[start_x], y0=[start_y],
                                  marker=11, color=[1, 0.5, 0], 
                                  markertext="Start", marker_text_offset=1)
@@ -850,7 +964,10 @@ def exec_waypoint_nav_demo(args):
                 bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
 
                 # Perform a state transition in the behavioural planner.
-                bp.transition_state(waypoints, ego_state, current_speed,sensor_data)
+                depth_data=sensor_data.get('Depth',None)
+                tl_state,x,y=check_for_traffic_light(sensor_data)
+                tl_depth=traffic_light_depth(x,y,camera_parameters=camera_parameters,depth_data=depth_data)
+                bp.transition_state(waypoints, ego_state, current_speed,tl_depth,tl_state)
 
                 # Compute the goal state set from the behavioural planner's computed goal state.
                 goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
@@ -1039,19 +1156,8 @@ def exec_waypoint_nav_demo(args):
                               collided_flag_history)
         write_collisioncount_file(collided_flag_history)
 
-def visualize_sensor_data(sensor_data,showing_dims=(416,416)):
-    if sensor_data.get("CameraRGB",None) is not None:
-        # Camera BGR data
-        image_BGR = to_bgra_array(sensor_data["CameraRGB"])
-        image_RGB = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2RGB)
-        image_RGB = cv2.resize(image_RGB, showing_dims)
-        image_RGB = image_RGB/255
-        image_RGB = np.expand_dims(image_RGB, 0)
-        plt_image,netout=detect_image(image_RGB, image_BGR, model)
-        for box in netout:
-            print(box.get_label())
-        cv2.imshow("BGRA_IMAGE",plt_image)
-        cv2.waitKey(1)
+
+
 
 def main():
     """Main function.

@@ -10,11 +10,15 @@ FOLLOW_LANE = 0
 DECELERATE_TO_STOP = 1
 STAY_STOPPED = 2
 DECELERATE_TO_TRAFFICLIGHT=3
+STAY_STOPPED_TL=4
 
 # Stop speed threshold
 STOP_THRESHOLD = 0.02
 # Number of cycles before moving from stop sign.
 STOP_COUNTS = 10
+MINIMUM_DEPTH_TL=150 #distanza minima da dove cominciare a rallentare dal semaforo (spazio di frenata in funzione della velocità attuale)
+VELOCITY_DECELERATE=30 #è la velocità che dobbiamo avere in prossimità del semaforo
+STOP_THRESHOLD_TL=3
 
 class BehaviouralPlanner:
     def __init__(self, lookahead, lead_vehicle_lookahead,model):
@@ -28,12 +32,13 @@ class BehaviouralPlanner:
         self._stop_count                    = 0
         self._lookahead_collision_index     = 0
         self._model=model
+
     
     def set_lookahead(self, lookahead):
         self._lookahead = lookahead
 
     # Handles state transitions and computes the goal state.
-    def transition_state(self, waypoints, ego_state, closed_loop_speed,sensor_data):
+    def transition_state(self, waypoints, ego_state, closed_loop_speed,tl_depth,traffic_light_state):
         """Handles state transitions and computes the goal state.  
         
         args:
@@ -96,14 +101,29 @@ class BehaviouralPlanner:
 
             self._goal_index = goal_index
             self._goal_state = waypoints[goal_index]
-            traffic_light_state=self.check_for_traffic_light(sensor_data)
-            for state in traffic_light_state:
-                if state=='1': #rosso
-                    self._state=DECELERATE_TO_STOP
-                elif state=='0': #verde
-                    self._state=DECELERATE_TO_TRAFFICLIGHT
 
-            
+            for state in traffic_light_state:
+                if tl_depth<=MINIMUM_DEPTH_TL:
+                    if ego_state[3]>=VELOCITY_DECELERATE:
+                        self._state=DECELERATE_TO_TRAFFICLIGHT
+
+        elif self._state==DECELERATE_TO_TRAFFICLIGHT:
+
+            #diminusci velocità fino a quella giusta per approcciarsi al semaforo
+            if tl_depth <= STOP_THRESHOLD_TL:
+                for state in traffic_light_state:
+                    if state=='1': #rosso
+                        self._state=STAY_STOPPED_TL
+                    elif state=='0':
+                        pass
+                        #mantenere la velocità di rallentamento
+            elif tl_depth<=1: #ho superato il semaforo (si potrebbe cambiare in "non detecto piu il semaforo")
+                self._state=FOLLOW_LANE
+
+        elif self._state==STAY_STOPPED_TL:
+            for state in traffic_light_state:
+                if state=='0':
+                    self._state=FOLLOW_LANE
 
         # In this state, check if we have reached a complete stop. Use the
         # closed loop speed to do so, to ensure we are actually at a complete
@@ -208,26 +228,12 @@ class BehaviouralPlanner:
                 
     # Checks to see if we need to modify our velocity profile to accomodate the
     # lead vehicle.
-    def check_for_traffic_light(self,sensor_data,showing_dims=(416,416)):
 
-        if sensor_data.get("CameraRGB", None) is not None:
-            # Camera BGR data
-            image_BGR = to_bgra_array(sensor_data["CameraRGB"])
-            image_RGB = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2RGB)
-            image_RGB = cv2.resize(image_RGB, showing_dims)
-            image_RGB = image_RGB / 255
-            image_RGB = np.expand_dims(image_RGB, 0)
-            plt_image, netout = self.detect_image(image_RGB, image_BGR, self._model)
-            for box in netout:
-                label=box.get_label()
-                # noi sappiamo l'ego state ( coordinate della macchina nel mondo )
-                #trasformo da coordinate immagine a coordinate mondo
-                #se è in prossimità :
-                    yield label
 
-    def from_camera_to_world_coordinate():
 
-    def detect_image(image_RGB, image_BGR, model):
+
+
+def detect_image(image_RGB, image_BGR, model):
         netout = predict_with_model_from_image(model, image_RGB)
         #plt_image = draw_boxes(image_BGR, netout, classes)
 
