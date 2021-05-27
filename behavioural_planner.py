@@ -121,6 +121,7 @@ class BehaviouralPlanner:
                 self._state=FOLLOW_LANE
 
         elif self._state==STAY_STOPPED_TL:
+
             for state in traffic_light_state:
                 if state=='0':
                     self._state=FOLLOW_LANE
