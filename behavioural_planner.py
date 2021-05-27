@@ -11,6 +11,7 @@ DECELERATE_TO_STOP = 1
 STAY_STOPPED = 2
 DECELERATE_TO_TRAFFICLIGHT=3
 STAY_STOPPED_TL=4
+DANGEROUS=5
 
 # Stop speed threshold
 STOP_THRESHOLD = 0.02
@@ -19,6 +20,7 @@ STOP_COUNTS = 10
 MINIMUM_DEPTH_TL=150 #distanza minima da dove cominciare a rallentare dal semaforo (spazio di frenata in funzione della velocità attuale)
 VELOCITY_DECELERATE=30 #è la velocità che dobbiamo avere in prossimità del semaforo
 STOP_THRESHOLD_TL=3
+
 
 class BehaviouralPlanner:
     def __init__(self, lookahead, lead_vehicle_lookahead,model):
@@ -32,13 +34,14 @@ class BehaviouralPlanner:
         self._stop_count                    = 0
         self._lookahead_collision_index     = 0
         self._model=model
+        self._previous_state                = None
 
     
     def set_lookahead(self, lookahead):
         self._lookahead = lookahead
 
     # Handles state transitions and computes the goal state.
-    def transition_state(self, waypoints, ego_state, closed_loop_speed,tl_depth,traffic_light_state):
+    def transition_state(self, waypoints, ego_state, closed_loop_speed,tl_depth,traffic_light_state,predict_collision):
         """Handles state transitions and computes the goal state.  
         
         args:
@@ -90,41 +93,51 @@ class BehaviouralPlanner:
         # complete, and examine the check_for_stop_signs() function to
         # understand it.
         if self._state == FOLLOW_LANE:
-            #print("FOLLOW_LANE")
-            # First, find the closest index to the ego vehicle.
-            closest_len, closest_index = get_closest_index(waypoints, ego_state)
+            if predict_collision:
+                self._previous_state=self._state
+                self._state=DANGEROUS
+            else :
+                #print("FOLLOW_LANE")
+                # First, find the closest index to the ego vehicle.
+                closest_len, closest_index = get_closest_index(waypoints, ego_state)
 
-            # Next, find the goal index that lies within the lookahead distance
-            # along the waypoints.
-            goal_index = self.get_goal_index(waypoints, ego_state, closest_len, closest_index)
-            while waypoints[goal_index][2] <= 0.1: goal_index += 1
+                # Next, find the goal index that lies within the lookahead distance
+                # along the waypoints.
+                goal_index = self.get_goal_index(waypoints, ego_state, closest_len, closest_index)
+                while waypoints[goal_index][2] <= 0.1: goal_index += 1
 
-            self._goal_index = goal_index
-            self._goal_state = waypoints[goal_index]
+                self._goal_index = goal_index
+                self._goal_state = waypoints[goal_index]
 
-            for state in traffic_light_state:
-                if tl_depth<=MINIMUM_DEPTH_TL:
-                    if ego_state[3]>=VELOCITY_DECELERATE:
-                        self._state=DECELERATE_TO_TRAFFICLIGHT
+                for state in traffic_light_state:
+                    if tl_depth<=MINIMUM_DEPTH_TL:
+                        if ego_state[3]>=VELOCITY_DECELERATE:
+                            self._state=DECELERATE_TO_TRAFFICLIGHT
 
         elif self._state==DECELERATE_TO_TRAFFICLIGHT:
-
-            #diminusci velocità fino a quella giusta per approcciarsi al semaforo
-            if tl_depth <= STOP_THRESHOLD_TL:
-                for state in traffic_light_state:
-                    if state=='1': #rosso
-                        self._state=STAY_STOPPED_TL
-                    elif state=='0':
-                        pass
-                        #mantenere la velocità di rallentamento
-            elif tl_depth<=1: #ho superato il semaforo (si potrebbe cambiare in "non detecto piu il semaforo")
-                self._state=FOLLOW_LANE
+            if predict_collision:
+                self._previous_state=self._state
+                self._state=DANGEROUS
+            else :
+                #diminusci velocità fino a quella giusta per approcciarsi al semaforo
+                if tl_depth <= STOP_THRESHOLD_TL:
+                    for state in traffic_light_state:
+                        if state=='1': #rosso
+                            self._state=STAY_STOPPED_TL
+                        elif state=='0':
+                            pass
+                            #mantenere la velocità di rallentamento
+                elif tl_depth<=1: #ho superato il semaforo (si potrebbe cambiare in "non detecto piu il semaforo")
+                    self._state=FOLLOW_LANE
 
         elif self._state==STAY_STOPPED_TL:
-
-            for state in traffic_light_state:
-                if state=='0':
-                    self._state=FOLLOW_LANE
+            if predict_collision:
+                self._previous_state=self._state
+                self._state=DANGEROUS
+            else :
+                for state in traffic_light_state:
+                    if state=='0':
+                        self._state=FOLLOW_LANE
 
         # In this state, check if we have reached a complete stop. Use the
         # closed loop speed to do so, to ensure we are actually at a complete
@@ -132,38 +145,52 @@ class BehaviouralPlanner:
         # state.
         elif self._state == DECELERATE_TO_STOP:
             print("DECELERATE_TO_STOP")
-            if abs(closed_loop_speed) <= STOP_THRESHOLD:
-                self._state = STAY_STOPPED
-                self._stop_count = 0
+            if predict_collision:
+                self._previous_state=self._state
+                self._state=DANGEROUS
+            else :
+                if abs(closed_loop_speed) <= STOP_THRESHOLD:
+                    self._state = STAY_STOPPED
+                    self._stop_count = 0
 
         # In this state, check to see if we have stayed stopped for at
         # least STOP_COUNTS number of cycles. If so, we can now leave
         # the stop sign and transition to the next state.
         elif self._state == STAY_STOPPED:
-            #print("STAY_STOPPED")
-            # We have stayed stopped for the required number of cycles.
-            # Allow the ego vehicle to leave the stop sign. Once it has
-            # passed the stop sign, return to lane following.
-            # You should use the get_closest_index(), get_goal_index(), and 
-            # check_for_stop_signs() helper functions.
-            closest_len, closest_index = get_closest_index(waypoints, ego_state)
-            goal_index = self.get_goal_index(waypoints, ego_state, closest_len, closest_index)
-            while waypoints[goal_index][2] <= 0.1: goal_index += 1
+            if predict_collision:
+                self._previous_state=self._state
+                self._state=DANGEROUS
+            else :
+                #print("STAY_STOPPED")
+                # We have stayed stopped for the required number of cycles.
+                # Allow the ego vehicle to leave the stop sign. Once it has
+                # passed the stop sign, return to lane following.
+                # You should use the get_closest_index(), get_goal_index(), and 
+                # check_for_stop_signs() helper functions.
+                closest_len, closest_index = get_closest_index(waypoints, ego_state)
+                goal_index = self.get_goal_index(waypoints, ego_state, closest_len, closest_index)
+                while waypoints[goal_index][2] <= 0.1: goal_index += 1
 
-            # We've stopped for the required amount of time, so the new goal 
-            # index for the stop line is not relevant. Use the goal index
-            # that is the lookahead distance away. 
-                            
-            self._goal_index = goal_index
-            self._goal_state = waypoints[goal_index]
+                # We've stopped for the required amount of time, so the new goal 
+                # index for the stop line is not relevant. Use the goal index
+                # that is the lookahead distance away. 
+                                
+                self._goal_index = goal_index
+                self._goal_state = waypoints[goal_index]
 
-            # If the stop sign is no longer along our path, we can now
-            # transition back to our lane following state.
-            
-            #if not stop_sign_found: self._state = FOLLOW_LANE
-
-            self._state = FOLLOW_LANE
+                # If the stop sign is no longer along our path, we can now
+                # transition back to our lane following state.
                 
+                #if not stop_sign_found: self._state = FOLLOW_LANE
+
+                self._state = FOLLOW_LANE
+        
+        elif self._state == DANGEROUS:
+
+            # dopo le operazioni da fare torna nello stato precedente prima di DANGEROUS
+            self._state=self._previous_state
+
+                    
         else:
             raise ValueError('Invalid state value.')
 
