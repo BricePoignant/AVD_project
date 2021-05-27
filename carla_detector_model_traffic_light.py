@@ -43,4 +43,4 @@ def detect_image(image_RGB, image_BGR, model):
     netout = predict_with_model_from_image(model, image_RGB)
     plt_image = draw_boxes(image_BGR, netout, classes)
 
-    return plt_image
+    return plt_image,netout

@@ -1038,7 +1038,8 @@ def visualize_sensor_data(sensor_data,showing_dims=(416,416)):
         image_RGB = cv2.resize(image_RGB, showing_dims)
         image_RGB = image_RGB/255
         image_RGB = np.expand_dims(image_RGB, 0)
-        plt_image=detect_image(image_RGB, image_BGR, model)
+        plt_image,netout=detect_image(image_RGB, image_BGR, model)
+        print(netout)
         cv2.imshow("BGRA_IMAGE",plt_image)
         cv2.waitKey(1)
 
