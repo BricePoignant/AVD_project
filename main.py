@@ -227,6 +227,15 @@ def make_carla_settings(args):
     camera0.set_rotation(cam_yaw, cam_pitch, cam_roll)
 
     settings.add_sensor(camera0)
+    # DEPTH Camera
+    camera1 = Camera("Depth", PostProcessing="Depth")
+
+    camera1.set_image_size(camera_width, camera_height)
+    camera1.set(FOV=camera_fov)
+    camera1.set_position(cam_x_pos, cam_y_pos, cam_height)
+    camera1.set_rotation(cam_yaw, cam_pitch, cam_roll)
+
+    settings.add_sensor(camera1)
 
     return settings
 
@@ -763,7 +772,7 @@ def exec_waypoint_nav_demo(args):
                                         SLOW_SPEED,
                                         STOP_LINE_BUFFER)
         bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
-                                                    LEAD_VEHICLE_LOOKAHEAD)
+                                                    LEAD_VEHICLE_LOOKAHEAD,model)
 
         #############################################
         # Scenario Execution Loop
@@ -841,7 +850,7 @@ def exec_waypoint_nav_demo(args):
                 bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
 
                 # Perform a state transition in the behavioural planner.
-                bp.transition_state(waypoints, ego_state, current_speed)
+                bp.transition_state(waypoints, ego_state, current_speed,sensor_data)
 
                 # Compute the goal state set from the behavioural planner's computed goal state.
                 goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)

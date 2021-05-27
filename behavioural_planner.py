@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 import numpy as np
 import math
+from carla.image_converter import labels_to_array, depth_to_array, to_bgra_array
+import cv2
+from postprocessing import decode_netout
 
 # State machine states
 FOLLOW_LANE = 0
 DECELERATE_TO_STOP = 1
 STAY_STOPPED = 2
+DECELERATE_TO_TRAFFICLIGHT=3
 
 # Stop speed threshold
 STOP_THRESHOLD = 0.02
@@ -13,7 +17,7 @@ STOP_THRESHOLD = 0.02
 STOP_COUNTS = 10
 
 class BehaviouralPlanner:
-    def __init__(self, lookahead, lead_vehicle_lookahead):
+    def __init__(self, lookahead, lead_vehicle_lookahead,model):
         self._lookahead                     = lookahead
         self._follow_lead_vehicle_lookahead = lead_vehicle_lookahead
         self._state                         = FOLLOW_LANE
@@ -23,12 +27,13 @@ class BehaviouralPlanner:
         self._goal_index                    = 0
         self._stop_count                    = 0
         self._lookahead_collision_index     = 0
+        self._model=model
     
     def set_lookahead(self, lookahead):
         self._lookahead = lookahead
 
     # Handles state transitions and computes the goal state.
-    def transition_state(self, waypoints, ego_state, closed_loop_speed):
+    def transition_state(self, waypoints, ego_state, closed_loop_speed,sensor_data):
         """Handles state transitions and computes the goal state.  
         
         args:
@@ -91,6 +96,13 @@ class BehaviouralPlanner:
 
             self._goal_index = goal_index
             self._goal_state = waypoints[goal_index]
+            traffic_light_state=self.check_for_traffic_light(sensor_data)
+            for state in traffic_light_state:
+                if state=='1': #rosso
+                    self._state=DECELERATE_TO_STOP
+                elif state=='0': #verde
+                    self._state=DECELERATE_TO_TRAFFICLIGHT
+
             
 
         # In this state, check if we have reached a complete stop. Use the
@@ -98,7 +110,7 @@ class BehaviouralPlanner:
         # stop, and compare to STOP_THRESHOLD.  If so, transition to the next
         # state.
         elif self._state == DECELERATE_TO_STOP:
-            #print("DECELERATE_TO_STOP")
+            print("DECELERATE_TO_STOP")
             if abs(closed_loop_speed) <= STOP_THRESHOLD:
                 self._state = STAY_STOPPED
                 self._stop_count = 0
@@ -196,6 +208,48 @@ class BehaviouralPlanner:
                 
     # Checks to see if we need to modify our velocity profile to accomodate the
     # lead vehicle.
+    def check_for_traffic_light(self,sensor_data,showing_dims=(416,416)):
+
+        if sensor_data.get("CameraRGB", None) is not None:
+            # Camera BGR data
+            image_BGR = to_bgra_array(sensor_data["CameraRGB"])
+            image_RGB = cv2.cvtColor(image_BGR, cv2.COLOR_BGR2RGB)
+            image_RGB = cv2.resize(image_RGB, showing_dims)
+            image_RGB = image_RGB / 255
+            image_RGB = np.expand_dims(image_RGB, 0)
+            plt_image, netout = self.detect_image(image_RGB, image_BGR, self._model)
+            for box in netout:
+                label=box.get_label()
+                # noi sappiamo l'ego state ( coordinate della macchina nel mondo )
+                #trasformo da coordinate immagine a coordinate mondo
+                #se è in prossimità :
+                    yield label
+
+    def from_camera_to_world_coordinate():
+
+    def detect_image(image_RGB, image_BGR, model):
+        netout = predict_with_model_from_image(model, image_RGB)
+        #plt_image = draw_boxes(image_BGR, netout, classes)
+
+        #return plt_image, netout
+        return netout
+
+
+    def predict_with_model_from_image(model, image):
+        anchors = [0.24, 0.79, 0.80, 2.12]
+        num_classes = 2
+        obj_thresh = 0.40
+        nms_thresh = 0.01
+        max_obj = 5
+        dummy_array = np.zeros((1, 1, 1, 1, max_obj, 4))
+        netout = model.predict([image, dummy_array])[0]
+
+        boxes = decode_netout(netout=netout, anchors=anchors,
+                              nb_class=num_classes,
+                              obj_threshold=obj_thresh,
+                              nms_threshold=nms_thresh)
+        return boxes
+
     def check_for_lead_vehicle(self, ego_state, lead_car_position):
         """Checks for lead vehicle within the proximity of the ego car, such
         that the ego car should begin to follow the lead vehicle.

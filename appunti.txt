@@ -1,0 +1,15 @@
+FOLLOW LANE
+
+DECELERATE TO STOP OR TRAFFIC LIGHT
+
+STAY STOPPED STOP : timer to stay stopped ( 3sec)
+
+STAY STOPPED TRAFFIC LIGHT : dipende dall' output del detector -> if verde or if rosso
+
+
+PERICOLO COLLISIONE : ha priorità rispetto agli altri. conosciamo precisamente i pedoni e le macchine dove stanno dai dati di Carla
+
+
+
+per stimare la profondità potremmo scaricare una depthcamera da git ( NON POSSIAMO USARE I DATI DEI SENSORI)
+
