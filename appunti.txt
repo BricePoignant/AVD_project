@@ -11,5 +11,22 @@ PERICOLO COLLISIONE : ha priorità rispetto agli altri. conosciamo precisamente 
 
 
 
-per stimare la profondità potremmo scaricare una depthcamera da git ( NON POSSIAMO USARE I DATI DEI SENSORI)
 
+
+implementare lead_vehicle come stato : adattarsi alla velocità del veicolo che è davanti a me nei wp da seguire
+
+se il detector ci detecta il sole invece dei semafori, scartiamo le detection che sono o lontane o troppo alte
+
+veicoli e pedoni che si muoveranno, niente macchine parcheggiate o ostacoli fermi.
+
+i percorsi che proveremo non partiranno in curva e ne prevedono inversione a U
+
+riascoltare min 16.00 ultima reg per capire la questione della partenza in curva
+
+posso prendere inforamzioni sugli incroci dai sensori di carla? se pensate di usare questo per "fregare " il detector
+avete altri modi per fare ridondanza ( sensori di  profondità,semantic segmentation...). POI SI SONO CORRETTI E QUINDI
+POSSIAMO UTILIZZARLA COME INFORMAZIONE
+
+non bisogna considerar gli stop? minuto 22
+
+definire ODD
