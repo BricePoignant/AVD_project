@@ -11,17 +11,20 @@ DECELERATE_TO_TRAFFICLIGHT=3
 STAY_STOPPED_TL=4
 DANGEROUS=5
 
+
 # Stop speed threshold
 STOP_THRESHOLD = 0.02
 # Number of cycles before moving from stop sign.
 STOP_COUNTS = 10
-MINIMUM_DEPTH_TL=150 #distanza minima da dove cominciare a rallentare dal semaforo (spazio di frenata in funzione della velocità attuale)
-VELOCITY_DECELERATE=30 #è la velocità che dobbiamo avere in prossimità del semaforo
-STOP_THRESHOLD_TL=3
+MINIMUM_DEPTH_TL= 15 #distanza minima da dove cominciare a rallentare dal semaforo (spazio di frenata in funzione della velocità attuale)
+VELOCITY_DECELERATE= 0.3 #è la velocità che dobbiamo avere in prossimità del semaforo
+STOP_THRESHOLD_TL= 5 #meters
 
+global tl_previous_state
+tl_previous_state=2
 
 class BehaviouralPlanner:
-    def __init__(self, lookahead, lead_vehicle_lookahead,model):
+    def __init__(self, lookahead, lead_vehicle_lookahead,model,desired_speed):
         self._lookahead                     = lookahead
         self._follow_lead_vehicle_lookahead = lead_vehicle_lookahead
         self._state                         = FOLLOW_LANE
@@ -33,6 +36,8 @@ class BehaviouralPlanner:
         self._lookahead_collision_index     = 0
         self._model=model
         self._previous_state                = None
+        self._desired_speed=desired_speed
+        self._velocity_decelerate=desired_speed-VELOCITY_DECELERATE*desired_speed
 
     
     def set_lookahead(self, lookahead):
@@ -90,12 +95,15 @@ class BehaviouralPlanner:
         # Make sure that get_closest_index() and get_goal_index() functions are
         # complete, and examine the check_for_stop_signs() function to
         # understand it.
+        global tl_previous_state
+        print(f"{ego_state[3]} {tl_depth}")
+
         if self._state == FOLLOW_LANE:
             if predict_collision:
                 self._previous_state=self._state
                 self._state=DANGEROUS
             else :
-                #print("FOLLOW_LANE")
+                print("FOLLOW_LANE")
                 # First, find the closest index to the ego vehicle.
                 closest_len, closest_index = get_closest_index(waypoints, ego_state)
 
@@ -107,34 +115,53 @@ class BehaviouralPlanner:
                 self._goal_index = goal_index
                 self._goal_state = waypoints[goal_index]
 
-                if traffic_light_state !=2:
-                    if tl_depth<=MINIMUM_DEPTH_TL:
-                        if ego_state[3]>=VELOCITY_DECELERATE:
-                            self._state=DECELERATE_TO_TRAFFICLIGHT
+
+                if traffic_light_state!=2:
+                    if ego_state[3] >= self._velocity_decelerate:
+
+                        if tl_depth <= MINIMUM_DEPTH_TL and tl_depth>=STOP_THRESHOLD_TL:
+                            self._goal_state[2] = self._velocity_decelerate
+                            self._state = DECELERATE_TO_TRAFFICLIGHT
+
 
         elif self._state==DECELERATE_TO_TRAFFICLIGHT:
+            print("DECELERATE TO TRAFFIC LIGHT")
+
             if predict_collision:
                 self._previous_state=self._state
                 self._state=DANGEROUS
             else :
-                #diminusci velocità fino a quella giusta per approcciarsi al semaforo
-                if tl_depth <= STOP_THRESHOLD_TL:
-                    if traffic_light_state=='1': #rosso
-                        self._state=STAY_STOPPED_TL
-                    elif traffic_light_state=='0':
-                        pass
-                        #mantenere la velocità di rallentamento
-                elif tl_depth<=1: #ho superato il semaforo (si potrebbe cambiare in "non detecto piu il semaforo")
-                    self._state=FOLLOW_LANE
+
+                    self._goal_state[2] = self._velocity_decelerate
+                    if traffic_light_state== 1:
+                        if tl_depth <= STOP_THRESHOLD_TL:#rosso
+                            self._goal_state[2] = 0
+                            self._state=STAY_STOPPED_TL
+                    elif traffic_light_state== 0:
+                        if tl_depth <= STOP_THRESHOLD_TL:#verde
+                            if tl_previous_state == 0 and traffic_light_state == 0:
+                                self._goal_state[2] = self._desired_speed
+                                self._state = FOLLOW_LANE
+                    else:
+                        if tl_previous_state ==2  and traffic_light_state == 2:
+                            self._goal_state[2] = self._desired_speed
+                            self._state = FOLLOW_LANE
 
         elif self._state==STAY_STOPPED_TL:
+            print("STAY STOPPED TL")
             if predict_collision:
                 self._previous_state=self._state
                 self._state=DANGEROUS
             else :
-                for state in traffic_light_state:
-                    if state=='0':
+                if traffic_light_state==0 and tl_previous_state == 0 :
                         self._state=FOLLOW_LANE
+                        self._goal_state[2] = self._desired_speed
+                elif traffic_light_state == 1:
+                    self._goal_state[2] = 0
+                elif traffic_light_state == 2:
+                    if tl_previous_state == 2 and traffic_light_state == 2:
+                        self._goal_state[2] = self._desired_speed
+                        self._state = FOLLOW_LANE
 
         # In this state, check if we have reached a complete stop. Use the
         # closed loop speed to do so, to ensure we are actually at a complete
@@ -187,9 +214,11 @@ class BehaviouralPlanner:
             # dopo le operazioni da fare torna nello stato precedente prima di DANGEROUS
             self._state=self._previous_state
 
-                    
+
         else:
             raise ValueError('Invalid state value.')
+
+        tl_previous_state = traffic_light_state
 
     # Gets the goal index in the list of waypoints, based on the lookahead and
     # the current ego state. In particular, find the earliest waypoint that has accumulated

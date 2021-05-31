@@ -3,6 +3,7 @@ from __future__ import print_function
 from __future__ import division
 
 # System level imports
+import copy
 import sys
 import os
 import argparse
@@ -39,8 +40,13 @@ from carla.planner.city_track import CityTrack
 ###############################################################################
 # CONFIGURABLE PARAMENTERS DURING EXAM
 ###############################################################################
+<<<<<<< Updated upstream
 PLAYER_START_INDEX = 7          #  spawn index for player
 DESTINATION_INDEX = 15        # Setting a Destination HERE
+=======
+PLAYER_START_INDEX = 123          #  spawn index for player
+DESTINATION_INDEX = 14     # Setting a Destination HERE
+>>>>>>> Stashed changes
 NUM_PEDESTRIANS        = 30      # total number of pedestrians to spawn
 NUM_VEHICLES           = 30      # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
@@ -116,10 +122,10 @@ CONTROLLER_OUTPUT_FOLDER = os.path.dirname(os.path.realpath(__file__)) +\
 # Camera parameters
 camera_parameters = {}
 camera_parameters['x'] = 1.8
-camera_parameters['y'] = 0
+camera_parameters['y'] = 0.0 + 0.8
 camera_parameters['z'] = 1.3
-camera_parameters['width'] = 416
-camera_parameters['height'] = 416
+camera_parameters['width'] = 800
+camera_parameters['height'] = 800
 camera_parameters['fov'] = 90
 
 camera_parameters['yaw'] = 0 
@@ -282,9 +288,19 @@ def obstacle_to_world(location, dimensions, orientation):
         box_pts.append([cpos[0,j], cpos[1,j]])
     
     return box_pts
+<<<<<<< Updated upstream
 def check_for_traffic_light(sensor_data,camera_parameters):
 
     showing_dims=(camera_parameters['width'],camera_parameters['height'])
+=======
+global cnt_image_name
+cnt_image_name=0
+def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
+    global cnt_image_name
+
+    #showing_dims=(camera_parameters['width'],camera_parameters['height'])
+    showing_dims=(416,416)
+>>>>>>> Stashed changes
     if sensor_data.get("CameraRGB", None) is not None:
         # Camera BGR data
         image_BGR = to_bgra_array(sensor_data["CameraRGB"])
@@ -293,14 +309,47 @@ def check_for_traffic_light(sensor_data,camera_parameters):
         image_RGB = image_RGB / 255
         image_RGB = np.expand_dims(image_RGB, 0)
         plt_image, netout = detect_image(image_RGB, image_BGR, model)
+<<<<<<< Updated upstream
         cv2.imshow("BGRA_IMAGE",plt_image)
         cv2.waitKey(1)
+=======
+        #plt_image=image_RGB
+        percentage=0.03
+>>>>>>> Stashed changes
         for box in netout:
             label=box.get_label()
             box_center_x,box_center_y=box.get_center()
             center_x = int((box.xmin+box_center_x) * camera_parameters['width'])
             center_y = int((box.ymin+box_center_y) * camera_parameters['height'])
+<<<<<<< Updated upstream
             return label,center_x,center_y
+=======
+
+            box.xmin-=box.xmin*percentage
+
+            box.ymin-=box.ymin*percentage
+            box.xmax+=box.xmax*percentage
+            box.ymax+=box.ymax*percentage
+
+
+
+            plt_image=draw_boxes(image_BGR,[box],["go", "stop"])
+            filename=f"{cnt_image_name}_{bp._state}_{ego_state[3]}.jpg"
+            cv2.namedWindow("BGRA_IMAGE")  # Create a named window
+            cv2.moveWindow("BGRA_IMAGE", 40, 30)
+            cv2.imshow("BGRA_IMAGE", plt_image)
+            cv2.waitKey(1)
+            cv2.imwrite(filename,plt_image)
+            cnt_image_name+=1
+
+
+            return label,box,plt_image
+
+        cv2.namedWindow("BGRA_IMAGE")  # Create a named window
+        cv2.moveWindow("BGRA_IMAGE", 40, 30)
+        cv2.imshow("BGRA_IMAGE", plt_image)
+        cv2.waitKey(1)
+>>>>>>> Stashed changes
         return 2,None,None
 
 def make_carla_settings(args):
@@ -348,7 +397,15 @@ def make_carla_settings(args):
 
     settings.add_sensor(camera0)
     # DEPTH Camera
+<<<<<<< Updated upstream
     camera1 = Camera("Depth", PostProcessing="Depth")
+=======
+    #prova parametri
+    camera_width=416
+    camera_height=416
+    #################
+    camera1 = Camera("DepthCamera", PostProcessing="Depth")
+>>>>>>> Stashed changes
 
     camera1.set_image_size(camera_width, camera_height)
     camera1.set(FOV=camera_fov)
@@ -668,6 +725,7 @@ def exec_waypoint_nav_demo(args):
 
         intersection_nodes = mission_planner.get_intersection_nodes()
         intersection_pair = []
+
         turn_cooldown = 0
         prev_x = False
         prev_y = False
@@ -892,7 +950,7 @@ def exec_waypoint_nav_demo(args):
                                         SLOW_SPEED,
                                         STOP_LINE_BUFFER)
         bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
-                                                    LEAD_VEHICLE_LOOKAHEAD,model)
+                                                    LEAD_VEHICLE_LOOKAHEAD,model,desired_speed)
 
         #############################################
         # Scenario Execution Loop
@@ -959,6 +1017,12 @@ def exec_waypoint_nav_demo(args):
             # to be operating at a frequency that is a division to the 
             # simulation frequency.
             if frame % LP_FREQUENCY_DIVISOR == 0:
+<<<<<<< Updated upstream
+=======
+
+                depth_data = sensor_data.get('DepthCamera', None)
+                segmentation_data = sensor_data.get('SegmentationCamera', None)
+>>>>>>> Stashed changes
                 # Compute open loop speed estimate.
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
 
@@ -972,6 +1036,7 @@ def exec_waypoint_nav_demo(args):
                 # Perform a state transition in the behavioural planner.
                 depth_data=sensor_data.get('Depth',None)
 
+<<<<<<< Updated upstream
                 tl_state,x,y=check_for_traffic_light(sensor_data=sensor_data,camera_parameters=camera_parameters)
                 tl_depth=0
                 if tl_state !=2 and depth_data is not None:
@@ -983,6 +1048,52 @@ def exec_waypoint_nav_demo(args):
                     tl_depth=traffic_light_depth(x,y,camera_parameters=camera_parameters,depth_data=depth_data)
                     print("tl_depth: ", end = '')
                     print(tl_depth)
+=======
+                tl_state,tl_box,img_rgb=check_for_traffic_light(bp,ego_state,sensor_data=sensor_data,camera_parameters=camera_parameters)
+                tl_depth=1000
+
+                if tl_state !=2 and segmentation_data is not None:
+                    #####segmentation_data######
+
+                    segmentation_data = labels_to_array(segmentation_data)
+
+                    #vedere perchè non fa segmentation data
+                    top_left_point,bottom_right_point=(tl_box.xmin,tl_box.ymin),(tl_box.xmax,tl_box.ymax)
+                    top_left_x=int(top_left_point[0]*416)
+                    bottom_right_x=int(bottom_right_point[0]*416)
+                    top_left_y = int(top_left_point[1]*416)
+                    bottom_right_y = int(bottom_right_point[1]*416)
+                    #top_left_x=int(top_left_point[0]*camera_parameters['width'])
+                    #bottom_right_x=int(bottom_right_point[0]*camera_parameters['width'])
+                    #top_left_y = int(top_left_point[1]*camera_parameters['height'])
+                    #bottom_right_y = int(bottom_right_point[1]*camera_parameters['height'])
+
+                    for i in range(top_left_x,bottom_right_x):
+                        for j in range(top_left_y,bottom_right_y):
+                              if segmentation_data[j][i]==12:
+                                break
+                        if segmentation_data[j][i] == 12:
+                            break
+
+
+                    #####depth_data#####
+                    depth_data = depth_to_array(depth_data)
+
+                    #cv2.namedWindow("DEPTH_IMAGE")  # Create a named window
+                    #cv2.moveWindow("DEPTH_IMAGE", 40, 300)
+                    #cv2.imshow("DEPTH_IMAGE", depth_data)
+                    #cv2.waitKey(1)
+
+                    #print("x,y :",end = '')
+                    #print(x,y)
+                    #print("tl_state : ", end = '')
+                    #print(tl_state)
+                    tl_depth=depth_data[j][i] * 1000
+                    # Consider depth in meters
+
+                    #print("tl_depth: ", end = '')
+                    #print(tl_depth)
+>>>>>>> Stashed changes
                 bp.transition_state(waypoints, ego_state, current_speed,tl_depth,tl_state, False)
 
 
