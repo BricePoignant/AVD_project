@@ -74,17 +74,13 @@ class CollisionChecker:
                 # if any of the obstacle points lies within any of our circles.
                 # If so, then the path will collide with an obstacle and
                 # the collision_free flag should be set to false for this flag
-                for k in range(len(obstacles)):
-                    collision_dists = \
-                        scipy.spatial.distance.cdist(obstacles[k], 
+                collision_dists = \
+                        scipy.spatial.distance.cdist(obstacles, 
                                                      circle_locations)
-                    collision_dists = np.subtract(collision_dists, 
+                collision_dists = np.subtract(collision_dists, 
                                                   self._circle_radii)
-                    collision_free = collision_free and \
+                collision_free = collision_free and \
                                      not np.any(collision_dists < 0)
-
-                    if not collision_free:
-                        break
                 if not collision_free:
                     break
 

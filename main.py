@@ -23,7 +23,7 @@ import json
 from math import sin, cos, pi, tan, sqrt
 
 from carla_detector_model_traffic_light import detect_image, get_model_from_file
-
+from postprocessing import draw_boxes
 # Script level imports
 sys.path.append(os.path.abspath(sys.path[0] + '/..'))
 import live_plotter as lv   # Custom live plotting library
@@ -40,15 +40,10 @@ from carla.planner.city_track import CityTrack
 ###############################################################################
 # CONFIGURABLE PARAMENTERS DURING EXAM
 ###############################################################################
-<<<<<<< Updated upstream
-PLAYER_START_INDEX = 7          #  spawn index for player
-DESTINATION_INDEX = 15        # Setting a Destination HERE
-=======
-PLAYER_START_INDEX = 123          #  spawn index for player
-DESTINATION_INDEX = 14     # Setting a Destination HERE
->>>>>>> Stashed changes
+PLAYER_START_INDEX = 11          #  spawn index for player
+DESTINATION_INDEX = 15     # Setting a Destination 
 NUM_PEDESTRIANS        = 30      # total number of pedestrians to spawn
-NUM_VEHICLES           = 30      # total number of vehicles to spawn
+NUM_VEHICLES           = 100      # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
 SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
 ###############################################################################àà
@@ -115,6 +110,9 @@ INTERP_MAX_POINTS_PLOT    = 10   # number of points used for displaying
                                  # selected path
 INTERP_DISTANCE_RES       = 0.01 # distance between interpolated points
 
+MAP_OBSTACLE_THRESHOLD =30 # viewing distance of obstacles
+
+
 # controller output directory
 CONTROLLER_OUTPUT_FOLDER = os.path.dirname(os.path.realpath(__file__)) +\
                            '/controller_output/'
@@ -122,7 +120,7 @@ CONTROLLER_OUTPUT_FOLDER = os.path.dirname(os.path.realpath(__file__)) +\
 # Camera parameters
 camera_parameters = {}
 camera_parameters['x'] = 1.8
-camera_parameters['y'] = 0.0 + 0.8
+camera_parameters['y'] = 0+0.8
 camera_parameters['z'] = 1.3
 camera_parameters['width'] = 800
 camera_parameters['height'] = 800
@@ -169,90 +167,7 @@ def to_rot(r):
 
     return Rz*Ry*Rx
 
-def traffic_light_depth (x,y,depth_data,camera_parameters):
-    camera_width = camera_parameters['width']
-    camera_height = camera_parameters['height']
-    camera_fov = camera_parameters['fov']
 
-    cam_yaw = camera_parameters['yaw']
-    cam_pitch = camera_parameters['pitch']
-    cam_roll = camera_parameters['roll']
-
-    cam_x_pos = camera_parameters['x']
-    cam_y_pos = camera_parameters['y']
-    cam_height = camera_parameters['z']
-
-    # Calculate Intrinsic Matrix
-    f = camera_width / (2 * tan(camera_fov * pi / 360))
-    Center_X = camera_width / 2.0
-    Center_Y = camera_height / 2.0
-
-    intrinsic_matrix = np.array([[f, 0, Center_X],
-                                 [0, f, Center_Y],
-                                 [0, 0, 1]])
-
-    inv_intrinsic_matrix = np.linalg.inv(intrinsic_matrix)
-
-    # Rotation matrix to align image frame to camera frame
-    rotation_image_camera_frame = np.dot(rotate_z(-90 * pi / 180), rotate_x(-90 * pi / 180))
-
-    image_camera_frame = np.zeros((4, 4))
-    image_camera_frame[:3, :3] = rotation_image_camera_frame
-    image_camera_frame[:, -1] = [0, 0, 0, 1]
-
-    # Lambda Function for transformation of image frame in camera frame
-    image_to_camera_frame = lambda object_camera_frame: np.dot(image_camera_frame, object_camera_frame)
-
-
-    pixel = [x, y, 1]
-    pixel = np.reshape(pixel, (3, 1))
-
-    # Projection Pixel to Image Frame
-
-    depth = depth_data[y][x] * 1000  # Consider depth in meters
-    return depth
-    '''
-    image_frame_vect = np.dot(inv_intrinsic_matrix, pixel) * depth
-
-    # Create extended vector
-    image_frame_vect_extended = np.zeros((4, 1))
-    image_frame_vect_extended[:3] = image_frame_vect
-    image_frame_vect_extended[-1] = 1
-
-    # Projection Camera to Vehicle Frame
-    image_to_camera_frame = lambda object_camera_frame: np.dot(image_camera_frame, object_camera_frame)
-    camera_frame = image_to_camera_frame(image_frame_vect_extended)
-    camera_frame = camera_frame[:3]
-    camera_frame = np.asarray(np.reshape(camera_frame, (1, 3)))
-
-    camera_frame_extended = np.zeros((4, 1))
-    camera_frame_extended[:3] = camera_frame.T
-    camera_frame_extended[-1] = 1
-
-    camera_to_vehicle_frame = np.zeros((4, 4))
-    camera_to_vehicle_frame[:3, :3] = to_rot([cam_pitch, cam_yaw, cam_roll])
-    camera_to_vehicle_frame[:, -1] = [cam_x_pos, cam_y_pos, cam_height, 1]
-
-    vehicle_frame = np.dot(camera_to_vehicle_frame, camera_frame_extended)
-    vehicle_frame = vehicle_frame[:3]
-    vehicle_frame = np.asarray(np.reshape(vehicle_frame, (1, 3)))
-
-    # Add to vehicle frame list
-    if abs(vehicle_frame[0][1]) < 0.5:
-    # Avoid small correction for a smoother driving
-        vehicle_frame_y = 0
-        vehicle_frame_x = 1.5
-    else:
-        vehicle_frame_y = vehicle_frame[0][1]
-        vehicle_frame_x = vehicle_frame[0][0] - 1.5
-
-    # -vehicle_frame_y for the inversion of the axis with the guide
-    vehicle_frame_list.append([vehicle_frame_x, -vehicle_frame_y, speed_limit])
-
-    # print(vehicle_frame_list)
-
-    return vehicle_frame_list
-    '''
 # Transform the obstacle with its boundary point in the global frame
 def obstacle_to_world(location, dimensions, orientation):
     box_pts = []
@@ -288,19 +203,12 @@ def obstacle_to_world(location, dimensions, orientation):
         box_pts.append([cpos[0,j], cpos[1,j]])
     
     return box_pts
-<<<<<<< Updated upstream
-def check_for_traffic_light(sensor_data,camera_parameters):
 
-    showing_dims=(camera_parameters['width'],camera_parameters['height'])
-=======
 global cnt_image_name
 cnt_image_name=0
 def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
     global cnt_image_name
-
-    #showing_dims=(camera_parameters['width'],camera_parameters['height'])
     showing_dims=(416,416)
->>>>>>> Stashed changes
     if sensor_data.get("CameraRGB", None) is not None:
         # Camera BGR data
         image_BGR = to_bgra_array(sensor_data["CameraRGB"])
@@ -309,21 +217,13 @@ def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
         image_RGB = image_RGB / 255
         image_RGB = np.expand_dims(image_RGB, 0)
         plt_image, netout = detect_image(image_RGB, image_BGR, model)
-<<<<<<< Updated upstream
-        cv2.imshow("BGRA_IMAGE",plt_image)
-        cv2.waitKey(1)
-=======
         #plt_image=image_RGB
         percentage=0.03
->>>>>>> Stashed changes
         for box in netout:
             label=box.get_label()
             box_center_x,box_center_y=box.get_center()
             center_x = int((box.xmin+box_center_x) * camera_parameters['width'])
             center_y = int((box.ymin+box_center_y) * camera_parameters['height'])
-<<<<<<< Updated upstream
-            return label,center_x,center_y
-=======
 
             box.xmin-=box.xmin*percentage
 
@@ -335,22 +235,18 @@ def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
 
             plt_image=draw_boxes(image_BGR,[box],["go", "stop"])
             filename=f"{cnt_image_name}_{bp._state}_{ego_state[3]}.jpg"
-            cv2.namedWindow("BGRA_IMAGE")  # Create a named window
-            cv2.moveWindow("BGRA_IMAGE", 40, 30)
+
             cv2.imshow("BGRA_IMAGE", plt_image)
             cv2.waitKey(1)
-            cv2.imwrite(filename,plt_image)
+            cv2.imwrite("images/"+filename,plt_image)
             cnt_image_name+=1
 
 
-            return label,box,plt_image
+            return label,box
 
-        cv2.namedWindow("BGRA_IMAGE")  # Create a named window
-        cv2.moveWindow("BGRA_IMAGE", 40, 30)
         cv2.imshow("BGRA_IMAGE", plt_image)
         cv2.waitKey(1)
->>>>>>> Stashed changes
-        return 2,None,None
+        return 2,None
 
 def make_carla_settings(args):
     """Make a CarlaSettings object with the settings we need.
@@ -396,16 +292,13 @@ def make_carla_settings(args):
     camera0.set_rotation(cam_yaw, cam_pitch, cam_roll)
 
     settings.add_sensor(camera0)
-    # DEPTH Camera
-<<<<<<< Updated upstream
-    camera1 = Camera("Depth", PostProcessing="Depth")
-=======
-    #prova parametri
+
+     #prova parametri
     camera_width=416
     camera_height=416
-    #################
+
+    # DEPTH Camera
     camera1 = Camera("DepthCamera", PostProcessing="Depth")
->>>>>>> Stashed changes
 
     camera1.set_image_size(camera_width, camera_height)
     camera1.set(FOV=camera_fov)
@@ -413,7 +306,15 @@ def make_carla_settings(args):
     camera1.set_rotation(cam_yaw, cam_pitch, cam_roll)
 
     settings.add_sensor(camera1)
+    # SEMANTIC SEG CAMERA
+    camera2 = Camera("SegmentationCamera", PostProcessing="SemanticSegmentation")
 
+    camera2.set_image_size(camera_width, camera_height)
+    camera2.set(FOV=camera_fov)
+    camera2.set_position(cam_x_pos, cam_y_pos, cam_height)
+    camera2.set_rotation(cam_yaw, cam_pitch, cam_roll)
+
+    settings.add_sensor(camera2)
     return settings
 
 class Timer(object):
@@ -490,7 +391,7 @@ def get_start_pos(scene):
 
     return (x, y, yaw)
 
-def get_player_collided_flag(measurement, 
+def get_player_collided_flag(measurement,
                              prev_collision_vehicles, 
                              prev_collision_pedestrians,
                              prev_collision_other):
@@ -720,12 +621,11 @@ def exec_waypoint_nav_demo(args):
 
         waypoints = []
         waypoints_route = mission_planner.compute_route(source, source_ori, destination, destination_ori)
-        desired_speed = 5.0
+        desired_speed = 3.0
         turn_speed    = 2.5
 
         intersection_nodes = mission_planner.get_intersection_nodes()
         intersection_pair = []
-
         turn_cooldown = 0
         prev_x = False
         prev_y = False
@@ -974,9 +874,6 @@ def exec_waypoint_nav_demo(args):
             # Gather current data from the CARLA server
             measurement_data, sensor_data = client.read_data()
 
-            # UPDATE HERE the obstacles list
-            obstacles = []
-
             # Update pose and timestamp
             prev_timestamp = current_timestamp
             current_x, current_y, current_z, current_pitch, current_roll, current_yaw = \
@@ -1017,12 +914,8 @@ def exec_waypoint_nav_demo(args):
             # to be operating at a frequency that is a division to the 
             # simulation frequency.
             if frame % LP_FREQUENCY_DIVISOR == 0:
-<<<<<<< Updated upstream
-=======
-
                 depth_data = sensor_data.get('DepthCamera', None)
                 segmentation_data = sensor_data.get('SegmentationCamera', None)
->>>>>>> Stashed changes
                 # Compute open loop speed estimate.
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
 
@@ -1032,24 +925,9 @@ def exec_waypoint_nav_demo(args):
 
                 # Set lookahead based on current speed.
                 bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
-
+                
                 # Perform a state transition in the behavioural planner.
-                depth_data=sensor_data.get('Depth',None)
-
-<<<<<<< Updated upstream
-                tl_state,x,y=check_for_traffic_light(sensor_data=sensor_data,camera_parameters=camera_parameters)
-                tl_depth=0
-                if tl_state !=2 and depth_data is not None:
-                    depth_data = depth_to_array(depth_data)
-                    print("x,y :",end = '')
-                    print(x,y)
-                    print("tl_state : ", end = '')
-                    print(tl_state)
-                    tl_depth=traffic_light_depth(x,y,camera_parameters=camera_parameters,depth_data=depth_data)
-                    print("tl_depth: ", end = '')
-                    print(tl_depth)
-=======
-                tl_state,tl_box,img_rgb=check_for_traffic_light(bp,ego_state,sensor_data=sensor_data,camera_parameters=camera_parameters)
+                tl_state,tl_box=check_for_traffic_light(bp,ego_state,sensor_data=sensor_data,camera_parameters=camera_parameters)
                 tl_depth=1000
 
                 if tl_state !=2 and segmentation_data is not None:
@@ -1063,39 +941,43 @@ def exec_waypoint_nav_demo(args):
                     bottom_right_x=int(bottom_right_point[0]*416)
                     top_left_y = int(top_left_point[1]*416)
                     bottom_right_y = int(bottom_right_point[1]*416)
-                    #top_left_x=int(top_left_point[0]*camera_parameters['width'])
-                    #bottom_right_x=int(bottom_right_point[0]*camera_parameters['width'])
-                    #top_left_y = int(top_left_point[1]*camera_parameters['height'])
-                    #bottom_right_y = int(bottom_right_point[1]*camera_parameters['height'])
 
                     for i in range(top_left_x,bottom_right_x):
                         for j in range(top_left_y,bottom_right_y):
-                              if segmentation_data[j][i]==12:
+                            if segmentation_data[j][i]==12:
                                 break
-                        if segmentation_data[j][i] == 12:
+                        if segmentation_data[j][i]==12:
                             break
 
 
                     #####depth_data#####
                     depth_data = depth_to_array(depth_data)
 
-                    #cv2.namedWindow("DEPTH_IMAGE")  # Create a named window
-                    #cv2.moveWindow("DEPTH_IMAGE", 40, 300)
-                    #cv2.imshow("DEPTH_IMAGE", depth_data)
-                    #cv2.waitKey(1)
+                    tl_depth=depth_data[j][i] * 1000  # Consider depth in meters
 
-                    #print("x,y :",end = '')
-                    #print(x,y)
-                    #print("tl_state : ", end = '')
-                    #print(tl_state)
-                    tl_depth=depth_data[j][i] * 1000
-                    # Consider depth in meters
-
-                    #print("tl_depth: ", end = '')
-                    #print(tl_depth)
->>>>>>> Stashed changes
                 bp.transition_state(waypoints, ego_state, current_speed,tl_depth,tl_state, False)
-
+                
+                # Update the obstacles list and check to see if we need to follow the lead vehicle.
+                lead_car_state = []
+                bp._follow_lead_vehicle = False
+                obstacles = np.empty((0,2), dtype=float)
+                for agent in measurement_data.non_player_agents:
+                    loc = agent.vehicle.transform.location
+                    if agent.HasField('vehicle') and (current_x-MAP_OBSTACLE_THRESHOLD < loc.x < current_x+MAP_OBSTACLE_THRESHOLD) and (current_y-MAP_OBSTACLE_THRESHOLD < loc.y < current_y+MAP_OBSTACLE_THRESHOLD):
+                        dim = agent.vehicle.bounding_box.extent
+                        ori = agent.vehicle.transform.rotation 
+                        if (bp._follow_lead_vehicle == False):
+                            bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
+                        if (bp._follow_lead_vehicle == True and len(lead_car_state)==0):
+                            lead_car_state = [loc.x, loc.y, agent.vehicle.forward_speed]
+                        else:
+                            obstacles=np.vstack((obstacles,np.array(obstacle_to_world(loc, dim, ori))))
+                    loc = agent.pedestrian.transform.location
+                    if agent.HasField('pedestrian') and (current_x-MAP_OBSTACLE_THRESHOLD < loc.x < current_x+MAP_OBSTACLE_THRESHOLD) and (current_y-MAP_OBSTACLE_THRESHOLD < loc.y < current_y+MAP_OBSTACLE_THRESHOLD):
+                        dim = agent.pedestrian.bounding_box.extent
+                        ori = agent.pedestrian.transform.rotation
+                        obstacles=np.vstack((obstacles,np.array(obstacle_to_world(loc, dim, ori))))
+            
 
                 # Compute the goal state set from the behavioural planner's computed goal state.
                 goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
@@ -1107,8 +989,10 @@ def exec_waypoint_nav_demo(args):
                 paths = local_planner.transform_paths(paths, ego_state)
 
                 # Perform collision checking.
-                collision_check_array = lp._collision_checker.collision_check(paths, [])
+                collision_check_array = lp._collision_checker.collision_check(paths, obstacles)
 
+
+                    
                 # Compute the best local path.
                 best_index = lp._collision_checker.select_best_path_index(paths, collision_check_array, bp._goal_state)
                 # If no path was feasible, continue to follow the previous best path.
@@ -1122,7 +1006,7 @@ def exec_waypoint_nav_demo(args):
                     # Compute the velocity profile for the path, and compute the waypoints.
                     desired_speed = bp._goal_state[2]
                     decelerate_to_stop = bp._state == behavioural_planner.DECELERATE_TO_STOP
-                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, None, bp._follow_lead_vehicle)
+                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, lead_car_state, bp._follow_lead_vehicle)
 
                     if local_waypoints != None:
                         # Update the controller waypoint path with the best local path.
@@ -1189,13 +1073,11 @@ def exec_waypoint_nav_demo(args):
                 trajectory_fig.roll("car", current_x, current_y)
                 
                 # Load parked car points
-                if len(obstacles) > 0:
-                    x = obstacles[:,:,0]
-                    y = obstacles[:,:,1]
-                    x = np.reshape(x, x.shape[0] * x.shape[1])
-                    y = np.reshape(y, y.shape[0] * y.shape[1])
-
-                    trajectory_fig.roll("obstacles_points", x, y)
+                if obstacles.size != 0:
+                    x = obstacles[:,0]
+                    y = obstacles[:,1]
+                    for i in range(len(x)):
+                        trajectory_fig.roll("obstacles_points", x[i], y[i])
 
                 
                 forward_speed_fig.roll("forward_speed", 
