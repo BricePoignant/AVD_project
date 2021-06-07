@@ -18,7 +18,7 @@ STOP_THRESHOLD = 0.02
 STOP_COUNTS = 10
 MINIMUM_DEPTH_TL= 15 #distanza minima da dove cominciare a rallentare dal semaforo (spazio di frenata in funzione della velocità attuale)
 VELOCITY_DECELERATE= 0.5 #è la velocità che dobbiamo avere in prossimità del semaforo
-STOP_THRESHOLD_TL= 6 #meters
+STOP_THRESHOLD_TL= 6.5 #meters
 
 global tl_previous_state
 tl_previous_state=2
@@ -96,7 +96,7 @@ class BehaviouralPlanner:
         # complete, and examine the check_for_stop_signs() function to
         # understand it.
         global tl_previous_state
-        print(f"{ego_state[3]} {tl_depth}")
+        #print(f"{ego_state[3]} {tl_depth}")
 
         if self._state == FOLLOW_LANE:
             if predict_collision:

@@ -20,7 +20,7 @@ import local_planner
 import behavioural_planner
 import cv2
 import json 
-from math import sin, cos, pi, tan, sqrt
+from math import sin, cos, pi, tan, sqrt, atan2
 
 from carla_detector_model_traffic_light import detect_image, get_model_from_file
 from postprocessing import draw_boxes
@@ -42,7 +42,7 @@ from carla.planner.city_track import CityTrack
 ###############################################################################
 PLAYER_START_INDEX = 11          #  spawn index for player
 DESTINATION_INDEX = 15     # Setting a Destination 
-NUM_PEDESTRIANS        = 30      # total number of pedestrians to spawn
+NUM_PEDESTRIANS        = 20      # total number of pedestrians to spawn
 NUM_VEHICLES           = 100      # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
 SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
@@ -111,6 +111,7 @@ INTERP_MAX_POINTS_PLOT    = 10   # number of points used for displaying
 INTERP_DISTANCE_RES       = 0.01 # distance between interpolated points
 
 MAP_OBSTACLE_THRESHOLD =30 # viewing distance of obstacles
+MAP_ANGLE_THRESHOLD = 15 # angle treshold in which we accept potential lead vehicles or not
 
 
 # controller output directory
@@ -966,7 +967,14 @@ def exec_waypoint_nav_demo(args):
                     if agent.HasField('vehicle') and (current_x-MAP_OBSTACLE_THRESHOLD < loc.x < current_x+MAP_OBSTACLE_THRESHOLD) and (current_y-MAP_OBSTACLE_THRESHOLD < loc.y < current_y+MAP_OBSTACLE_THRESHOLD):
                         dim = agent.vehicle.bounding_box.extent
                         ori = agent.vehicle.transform.rotation 
-                        if (bp._follow_lead_vehicle == False):
+                        vehicle_angle=abs(atan2(sin(ego_state[2]-ori.yaw * pi / 180), cos(ego_state[2]-ori.yaw * pi / 180)))
+                        if (bp._follow_lead_vehicle == False and vehicle_angle * 180 / pi < MAP_ANGLE_THRESHOLD):
+                            print("ego :", end='')
+                            print(ego_state[2]*180/pi)
+                            print("ori :", end='')
+                            print(ori.yaw)
+                            print("veh angle :", end='')
+                            print(vehicle_angle* 180 / pi)
                             bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
                         if (bp._follow_lead_vehicle == True and len(lead_car_state)==0):
                             lead_car_state = [loc.x, loc.y, agent.vehicle.forward_speed]
@@ -1072,14 +1080,19 @@ def exec_waypoint_nav_demo(args):
                 trajectory_fig.roll("trajectory", current_x, current_y)
                 trajectory_fig.roll("car", current_x, current_y)
                 
-                # Load parked car points
+                # Load obstacles points
                 if obstacles.size != 0:
                     x = obstacles[:,0]
                     y = obstacles[:,1]
                     for i in range(len(x)):
                         trajectory_fig.roll("obstacles_points", x[i], y[i])
 
-                
+                if lead_car_state != []:    # If there exists a lead car, plot it
+                    trajectory_fig.roll("leadcar", lead_car_state[0],
+                                        lead_car_state[1])
+                else :
+                    trajectory_fig.roll("leadcar", 0,
+                                        0)
                 forward_speed_fig.roll("forward_speed", 
                                        current_timestamp, 
                                        current_speed)
@@ -1203,7 +1216,7 @@ def main():
         '-q', '--quality-level',
         choices=['Low', 'Epic'],
         type=lambda s: s.title(),
-        default='Low',
+        default='Epic',
         help='graphics quality level.')
     argparser.add_argument(
         '-c', '--carla-settings',
