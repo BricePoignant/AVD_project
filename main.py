@@ -40,10 +40,10 @@ from carla.planner.city_track import CityTrack
 ###############################################################################
 # CONFIGURABLE PARAMENTERS DURING EXAM
 ###############################################################################
-PLAYER_START_INDEX = 11          #  spawn index for player
-DESTINATION_INDEX = 15     # Setting a Destination 
-NUM_PEDESTRIANS        = 20      # total number of pedestrians to spawn
-NUM_VEHICLES           = 100      # total number of vehicles to spawn
+PLAYER_START_INDEX = 92          #  spawn index for player
+DESTINATION_INDEX = 53    # Setting a Destination
+NUM_PEDESTRIANS        = 1      # total number of pedestrians to spawn
+NUM_VEHICLES           = 0     # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
 SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
 ###############################################################################àà
@@ -113,6 +113,7 @@ INTERP_DISTANCE_RES       = 0.01 # distance between interpolated points
 MAP_OBSTACLE_THRESHOLD =30 # viewing distance of obstacles
 MAP_ANGLE_THRESHOLD = 15 # angle treshold in which we accept potential lead vehicles or not
 
+MAX_DEPTH=1000
 
 # controller output directory
 CONTROLLER_OUTPUT_FOLDER = os.path.dirname(os.path.realpath(__file__)) +\
@@ -124,13 +125,14 @@ camera_parameters['x'] = 1.8
 camera_parameters['y'] = 0+0.8
 camera_parameters['z'] = 1.3
 camera_parameters['width'] = 800
-camera_parameters['height'] = 800
+camera_parameters['height'] = 600
 camera_parameters['fov'] = 90
 
-camera_parameters['yaw'] = 0 
-camera_parameters['pitch'] = 0
+camera_parameters['yaw'] = 0
+camera_parameters['pitch'] = 0+15
 camera_parameters['roll'] = 0
-#
+
+
 
 # Model initialization for detector
 model = get_model_from_file()
@@ -222,17 +224,11 @@ def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
         percentage=0.03
         for box in netout:
             label=box.get_label()
-            box_center_x,box_center_y=box.get_center()
-            center_x = int((box.xmin+box_center_x) * camera_parameters['width'])
-            center_y = int((box.ymin+box_center_y) * camera_parameters['height'])
 
             box.xmin-=box.xmin*percentage
-
             box.ymin-=box.ymin*percentage
             box.xmax+=box.xmax*percentage
             box.ymax+=box.ymax*percentage
-
-
 
             plt_image=draw_boxes(image_BGR,[box],["go", "stop"])
             filename=f"{cnt_image_name}_{bp._state}_{ego_state[3]}.jpg"
@@ -241,7 +237,6 @@ def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
             cv2.waitKey(1)
             cv2.imwrite("images/"+filename,plt_image)
             cnt_image_name+=1
-
 
             return label,box
 
@@ -587,7 +582,7 @@ def exec_waypoint_nav_demo(args):
               str(SIMULATION_TIME_STEP))
         TOTAL_EPISODE_FRAMES = int((TOTAL_RUN_TIME + WAIT_TIME_BEFORE_START) /\
                                SIMULATION_TIME_STEP) + TOTAL_FRAME_BUFFER
-        # un attimo che c'è mio padre che si è vaccinato ,ho dato il controllo a pasquale
+
         #############################################
         # Frame-by-Frame Iteration and Initialization
         #############################################
@@ -621,11 +616,20 @@ def exec_waypoint_nav_demo(args):
         destination = mission_planner.project_node(destination_pos)
 
         waypoints = []
+
+        waypoints_native=mission_planner.compute_route(source, source_ori, destination, destination_ori)
+        for i in range(len(waypoints_native)):
+            node=waypoints_native[i]
+            waypoints_native[i]=mission_planner._map.convert_to_world(node)
+
         waypoints_route = mission_planner.compute_route(source, source_ori, destination, destination_ori)
-        desired_speed = 3.0
+        desired_speed = 5.0
         turn_speed    = 2.5
 
         intersection_nodes = mission_planner.get_intersection_nodes()
+        intersection_nodes_world=[mission_planner._map.convert_to_world(node) for node in intersection_nodes]
+        for i in range(len(intersection_nodes_world)):
+            intersection_nodes_world[i] = intersection_nodes_world[i][:2]
         intersection_pair = []
         turn_cooldown = 0
         prev_x = False
@@ -871,6 +875,8 @@ def exec_waypoint_nav_demo(args):
         prev_collision_pedestrians = 0
         prev_collision_other       = 0
 
+        closest_inters_indx = 0
+
         for frame in range(TOTAL_EPISODE_FRAMES):
             # Gather current data from the CARLA server
             measurement_data, sensor_data = client.read_data()
@@ -914,6 +920,7 @@ def exec_waypoint_nav_demo(args):
             # stored in the variable LP_FREQUENCY_DIVISOR, as it is analogous
             # to be operating at a frequency that is a division to the 
             # simulation frequency.
+
             if frame % LP_FREQUENCY_DIVISOR == 0:
                 depth_data = sensor_data.get('DepthCamera', None)
                 segmentation_data = sensor_data.get('SegmentationCamera', None)
@@ -926,35 +933,26 @@ def exec_waypoint_nav_demo(args):
 
                 # Set lookahead based on current speed.
                 bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
-                
-                # Perform a state transition in the behavioural planner.
-                tl_state,tl_box=check_for_traffic_light(bp,ego_state,sensor_data=sensor_data,camera_parameters=camera_parameters)
-                tl_depth=1000
 
-                if tl_state !=2 and segmentation_data is not None:
-                    #####segmentation_data######
+                tl_depth=MAX_DEPTH
+                if closest_inters_indx==0:
+                    closest_inters_len,closest_inters_indx=bp.get_closest_intersection(waypoints_native,ego_state,intersection_nodes_world)
+                    print(f" distanza dall'intersection {closest_inters_len}")
+                else:
+                    closest_inters_len,closest_inters_indx=bp.get_closest_intersection(waypoints_native, ego_state,intersection_nodes_world,closest_inters_indx)
+                    # Perform a state transition in the behavioural planner.
 
-                    segmentation_data = labels_to_array(segmentation_data)
+                    print(f" distanza dall'intersection {closest_inters_len}")
 
-                    #vedere perchè non fa segmentation data
-                    top_left_point,bottom_right_point=(tl_box.xmin,tl_box.ymin),(tl_box.xmax,tl_box.ymax)
-                    top_left_x=int(top_left_point[0]*416)
-                    bottom_right_x=int(bottom_right_point[0]*416)
-                    top_left_y = int(top_left_point[1]*416)
-                    bottom_right_y = int(bottom_right_point[1]*416)
+                tl_state, tl_box = check_for_traffic_light(bp, ego_state, sensor_data=sensor_data,camera_parameters=camera_parameters)
+                if closest_inters_len <= 15: ###################da definire
+                    #tl_state, tl_box = check_for_traffic_light(bp, ego_state, sensor_data=sensor_data,camera_parameters=camera_parameters)
 
-                    for i in range(top_left_x,bottom_right_x):
-                        for j in range(top_left_y,bottom_right_y):
-                            if segmentation_data[j][i]==12:
-                                break
-                        if segmentation_data[j][i]==12:
-                            break
+                    if tl_state !=2 and segmentation_data is not None:
+                        tl_depth=compute_depth_tl(segmentation_data,depth_data,tl_box)
+                        '''if tl_depth==1000:
+                            del intersection_nodes_world[closest_inters_indx+2]'''
 
-
-                    #####depth_data#####
-                    depth_data = depth_to_array(depth_data)
-
-                    tl_depth=depth_data[j][i] * 1000  # Consider depth in meters
 
                 bp.transition_state(waypoints, ego_state, current_speed,tl_depth,tl_state, False)
                 
@@ -969,12 +967,6 @@ def exec_waypoint_nav_demo(args):
                         ori = agent.vehicle.transform.rotation 
                         vehicle_angle=abs(atan2(sin(ego_state[2]-ori.yaw * pi / 180), cos(ego_state[2]-ori.yaw * pi / 180)))
                         if (bp._follow_lead_vehicle == False and vehicle_angle * 180 / pi < MAP_ANGLE_THRESHOLD):
-                            print("ego :", end='')
-                            print(ego_state[2]*180/pi)
-                            print("ori :", end='')
-                            print(ori.yaw)
-                            print("veh angle :", end='')
-                            print(vehicle_angle* 180 / pi)
                             bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
                         if (bp._follow_lead_vehicle == True and len(lead_car_state)==0):
                             lead_car_state = [loc.x, loc.y, agent.vehicle.forward_speed]
@@ -1216,7 +1208,7 @@ def main():
         '-q', '--quality-level',
         choices=['Low', 'Epic'],
         type=lambda s: s.title(),
-        default='Epic',
+        default='Low',
         help='graphics quality level.')
     argparser.add_argument(
         '-c', '--carla-settings',
@@ -1243,6 +1235,31 @@ def main():
         except TCPConnectionError as error:
             logging.error(error)
             time.sleep(1)
+
+
+def compute_depth_tl(segmentation_data, depth_data, tl_box):
+    segmentation_data = labels_to_array(segmentation_data)
+
+    # vedere perchè non fa segmentation data
+    top_left_point, bottom_right_point = (tl_box.xmin, tl_box.ymin), (tl_box.xmax, tl_box.ymax)
+    top_left_x = int(top_left_point[0] * 416)
+    bottom_right_x = int(bottom_right_point[0] * 416)
+    top_left_y = int(top_left_point[1] * 416)
+    bottom_right_y = int(bottom_right_point[1] * 416)
+
+    for i in range(top_left_x, bottom_right_x):
+        for j in range(top_left_y, bottom_right_y):
+            if segmentation_data[j][i] == 12:
+                break
+        if segmentation_data[j][i] == 12:
+            break
+
+    #####depth_data#####
+    depth_data = depth_to_array(depth_data)
+
+    tl_depth = depth_data[j][i] * 1000  # Consider depth in meters
+    return tl_depth
+
 
 if __name__ == '__main__':
 
