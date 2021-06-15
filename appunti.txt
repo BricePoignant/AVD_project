@@ -1,15 +1,22 @@
-FOLLOW LANE
 
-DECELERATE TO STOP OR TRAFFIC LIGHT
+tl:
+(11,15,ok)
+(92,53,ok)
+(51,92,ok)
+(17,135,ok)
+(135,15,dopo)
+(5,147,ok)
+(147,90,ok)
+(146,13,)
 
-STAY STOPPED STOP : timer to stay stopped ( 3sec)
+(138,90,ok però un pò troppe miss detection)
 
-STAY STOPPED TRAFFIC LIGHT : dipende dall' output del detector -> if verde or if rosso
+(53,92,spawno troppo vicino al semaforo e non riesco ad accelerare) --probabilmente non va gestito(vedi telegram)--
+
+PERCORSI CON PEDONI:
+92,90,number=200,seed=20
 
 
-PERICOLO COLLISIONE : ha priorità rispetto agli altri. conosciamo precisamente i pedoni e le macchine dove stanno dai dati di Carla
 
-
-
-per stimare la profondità potremmo scaricare una depthcamera da git ( NON POSSIAMO USARE I DATI DEI SENSORI)
-
+COLLISIONI :
+(51,20,pede=150,vehicle=50,seed=0)
