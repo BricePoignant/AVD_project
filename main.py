@@ -40,10 +40,10 @@ from carla.planner.city_track import CityTrack
 ###############################################################################
 # CONFIGURABLE PARAMENTERS DURING EXAM
 ###############################################################################
-PLAYER_START_INDEX = 11         #  spawn index for player
+PLAYER_START_INDEX = 88         #  spawn index for player
 DESTINATION_INDEX = 15          # Setting a Destination
-NUM_PEDESTRIANS        = 250     # total number of pedestrians to spawn
-NUM_VEHICLES           = 250     # total number of vehicles to spawn
+NUM_PEDESTRIANS        = 150     # total number of pedestrians to spawn
+NUM_VEHICLES           = 150     # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
 SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
 ###############################################################################àà
@@ -99,7 +99,8 @@ PATH_SELECT_WEIGHT     = 10
 A_MAX                  = 2.5              # m/s^2
 SLOW_SPEED             = 2.0              # m/s
 STOP_LINE_BUFFER       = 3.5              # m
-LEAD_VEHICLE_LOOKAHEAD = 20.0 +3.0             # m
+LEAD_VEHICLE_LOOKAHEAD = 20.0 +3.0        # m Treshold at which we stop considering the lead vehicle as an obstacle
+LEAD_VEHICLE_ACTIVATION = 13              # m Treshold at which the velocity planner accept the lead vehicle
 LP_FREQUENCY_DIVISOR   = 2                # Frequency divisor to make the 
                                           # local planner operate at a lower
                                           # frequency than the controller
@@ -114,9 +115,7 @@ INTERP_DISTANCE_RES       = 0.01 # distance between interpolated points
 
 MAP_OBSTACLE_THRESHOLD =30 # viewing distance of obstacles
 
-MAP_ANGLE_THRESHOLD = 15 # angle treshold in which we accept potential lead vehicles or not
-
-predict_collision = False
+MAP_ANGLE_THRESHOLD = 25 # angle treshold in which we accept potential lead vehicles or not
 
 # controller output directory
 CONTROLLER_OUTPUT_FOLDER = os.path.dirname(os.path.realpath(__file__)) +\
@@ -127,8 +126,8 @@ camera_parameters = {}
 camera_parameters['x'] = 1.8
 camera_parameters['y'] = 0+0.8
 camera_parameters['z'] = 1.3
-camera_parameters['width'] = 416
-camera_parameters['height'] = 416
+camera_parameters['width'] = 800
+camera_parameters['height'] = 800
 camera_parameters['fov'] = 90
 
 camera_parameters['yaw'] = 0
@@ -629,7 +628,7 @@ def exec_waypoint_nav_demo(args):
 
         waypoints_route = mission_planner.compute_route(source, source_ori, destination, destination_ori)
         desired_speed = 5.0
-        turn_speed    = 2.5+0.5
+        turn_speed    = 2.5
 
         intersection_nodes = mission_planner.get_intersection_nodes()
 
@@ -1000,9 +999,15 @@ def exec_waypoint_nav_demo(args):
                         ori = agent.vehicle.transform.rotation
                         vehicle_angle=abs(atan2(sin(ego_state[2]-ori.yaw * pi / 180), cos(ego_state[2]-ori.yaw * pi / 180)))
                         if (bp._follow_lead_vehicle == False and vehicle_angle * 180 / pi < MAP_ANGLE_THRESHOLD):
+                            bp._follow_lead_vehicle_lookahead=LEAD_VEHICLE_LOOKAHEAD
                             bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
                         if (bp._follow_lead_vehicle == True and len(lead_car_state)==0):
-                            lead_car_state = [loc.x, loc.y, agent.vehicle.forward_speed]
+                            print("lead vehicle lookahead: ",bp._follow_lead_vehicle)
+                            bp._follow_lead_vehicle = False
+                            bp._follow_lead_vehicle_lookahead=LEAD_VEHICLE_ACTIVATION
+                            bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
+                            if (bp._follow_lead_vehicle == True):
+                                lead_car_state = [loc.x, loc.y, agent.vehicle.forward_speed]
                         else:
                             obstacles=np.vstack((obstacles,np.array(obstacle_to_world(loc, dim, ori))))
                             cars = np.vstack((cars, np.array(obstacle_to_world(loc, dim, ori))))
