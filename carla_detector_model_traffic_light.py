@@ -18,7 +18,7 @@ BASE_DIR = os.path.dirname(__file__)
 classes=["go", "stop"]
 anchors=[0.24,0.79, 0.80,2.12]
 num_classes=2
-obj_thresh=0.35
+obj_thresh=0.25
 nms_thresh=0.01
 max_obj=5
 

@@ -92,7 +92,7 @@ class CollisionChecker:
 
         return collision_check_array
 
-    def collision_check_pedestrian(self, paths, obstacles,indxs):
+    def collision_check_pedestrian(self, paths, obstacles):
         """Returns a bool array on whether each path is collision free.
 
         args:
@@ -120,52 +120,52 @@ class CollisionChecker:
         """
 
         collision_check_array = np.zeros(len(paths), dtype=bool)
+
         for i in range(len(paths)):
             collision_free = True
-            if i in indxs:
-                path= paths[i]
+            path = paths[i]
 
-                # Iterate over the points in the path.
-                for j in range(len(path[0])):
-                    # Compute the circle locations along this point in the path.
-                    # These circle represent an approximate collision
-                    # border for the vehicle, which will be used to check
-                    # for any potential collisions along each path with obstacles.
+            # Iterate over the points in the path.
+            for j in range(len(path[0])):
+                # Compute the circle locations along this point in the path.
+                # These circle represent an approximate collision
+                # border for the vehicle, which will be used to check
+                # for any potential collisions along each path with obstacles.
 
-                    # The circle offsets are given by self._circle_offsets.
-                    # The circle offsets need to placed at each point along the path,
-                    # with the offset rotated by the yaw of the vehicle.
-                    # Each path is of the form [[x_values], [y_values],
-                    # [theta_values]], where each of x_values, y_values, and
-                    # theta_values are in sequential order.
+                # The circle offsets are given by self._circle_offsets.
+                # The circle offsets need to placed at each point along the path,
+                # with the offset rotated by the yaw of the vehicle.
+                # Each path is of the form [[x_values], [y_values],
+                # [theta_values]], where each of x_values, y_values, and
+                # theta_values are in sequential order.
 
-                    # Thus, we need to compute:
-                    # circle_x = point_x + circle_offset*cos(yaw)
-                    # circle_y = point_y circle_offset*sin(yaw)
-                    # for each point along the path.
-                    # point_x is given by path[0][j], and point _y is given by
-                    # path[1][j].
-                    circle_locations = np.zeros((len(self._circle_offsets_pedestrian), 2))
+                # Thus, we need to compute:
+                # circle_x = point_x + circle_offset*cos(yaw)
+                # circle_y = point_y circle_offset*sin(yaw)
+                # for each point along the path.
+                # point_x is given by path[0][j], and point _y is given by
+                # path[1][j].
+                circle_locations = np.zeros((len(self._circle_offsets_pedestrian), 2))
 
-                    circle_offset = np.array(self._circle_offsets_pedestrian)
-                    circle_locations[:, 0] = path[0][j] + circle_offset * cos(path[2][j])
-                    circle_locations[:, 1] = path[1][j] + circle_offset * sin(path[2][j])
+                circle_offset = np.array(self._circle_offsets_pedestrian)
+                circle_locations[:, 0] = path[0][j] + circle_offset * cos(path[2][j])
+                circle_locations[:, 1] = path[1][j] + circle_offset * sin(path[2][j])
 
-                    # Assumes each obstacle is approximated by a collection of
-                    # points of the form [x, y].
-                    # Here, we will iterate through the obstacle points, and check
-                    # if any of the obstacle points lies within any of our circles.
-                    # If so, then the path will collide with an obstacle and
-                    # the collision_free flag should be set to false for this flag
-                    collision_dists = \
-                            scipy.spatial.distance.cdist(obstacles,
-                                                         circle_locations)
-                    collision_dists = np.subtract(collision_dists,
-                                                      self._circle_radii_pedestrian)
-                    collision_free = collision_free and \
-                                         not np.any(collision_dists < 0)
-                    if not collision_free:
-                        break
+                # Assumes each obstacle is approximated by a collection of
+                # points of the form [x, y].
+                # Here, we will iterate through the obstacle points, and check
+                # if any of the obstacle points lies within any of our circles.
+                # If so, then the path will collide with an obstacle and
+                # the collision_free flag should be set to false for this flag
+                collision_dists = \
+                    scipy.spatial.distance.cdist(obstacles,
+                                                 circle_locations)
+                collision_dists = np.subtract(collision_dists,
+                                              self._circle_radii_pedestrian)
+                collision_free = collision_free and \
+                                 not np.any(collision_dists < 0)
+                if not collision_free:
+                    break
 
             collision_check_array[i] = collision_free
 

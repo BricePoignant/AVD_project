@@ -13,6 +13,7 @@ THRESH_PEDE = 5.0
 STOP_COUNTS = 3
 
 DECEL_THRESHOLD = 15 # distanza minima da dove cominciare a rallentare dal semaforo (spazio di frenata in funzione della velocità attuale)
+DEPTH_COMPARISON_LIST=[DECEL_THRESHOLD]*3
 LAST_CHECK_DISTANCE=7 #meters
 DELTA_ORIENTATION=15
 
@@ -125,7 +126,11 @@ class BehaviouralPlanner:
                 self._goal_state = waypoints[goal_index]
 
                 if len(self._depth_history)>=3:
-                    if self._depth_history[-3:]<=[DECEL_THRESHOLD]*3 and tl_depth>=LAST_CHECK_DISTANCE and tl_depth!=1000:
+                    depth_flag=True
+                    for d in self._depth_history[-3:]:
+                        if d>=DECEL_THRESHOLD:
+                            depth_flag=False
+                    if depth_flag and tl_depth>=LAST_CHECK_DISTANCE and tl_depth!=1000:
                         self._goal_state=self.compute_tl_goal(ego_state,tl_depth,waypoints,goal_index,DELTA_ORIENTATION)
                         self._state = DECELERATE_TO_TRAFFICLIGHT
 
@@ -136,9 +141,10 @@ class BehaviouralPlanner:
             if self._obstacle:
                 self._previous_state = self._state
                 self._state = DANGEROUS
-
                 closest_len, closest_index = get_closest_index(waypoints, ego_state)
                 self._goal_state[2]=0
+            elif self._follow_lead_vehicle:
+                self._state=FOLLOW_LANE
             else:
                 if tl_depth<=LAST_CHECK_DISTANCE:
                     if self._tl_state_history[-3:]==[1,1,1]:
@@ -146,6 +152,8 @@ class BehaviouralPlanner:
                         self._state = STAY_STOPPED_TL
                     elif self._tl_state_history[-3:]==[0,0,0]:
                         self._state = FOLLOW_LANE
+                else: #caso miss detections
+                    self.manage_miss_detections(number_frame_limit=3)
 
         elif self._state == STAY_STOPPED_TL:
             print("STAY STOPPED TL")
@@ -153,7 +161,6 @@ class BehaviouralPlanner:
 
                 self._previous_state = self._state
                 self._state = DANGEROUS
-
                 closest_len, closest_index = get_closest_index(waypoints, ego_state)
                 self._goal_state[2]=0
             else:
@@ -165,6 +172,11 @@ class BehaviouralPlanner:
                     self._goal_index = goal_index
                     self._goal_state = waypoints[goal_index]
                     self._state = FOLLOW_LANE
+                elif self._tl_state_history[-3:] == [1, 1, 1]:
+                    self._goal_state[2]=0
+
+                else:
+                    self.manage_miss_detections(number_frame_limit=3)
 
         elif self._state == DANGEROUS:
             print("DANGEROUS")
@@ -175,6 +187,7 @@ class BehaviouralPlanner:
                     goal_index = self.get_goal_index(waypoints, ego_state, closest_len, closest_index)
                     self._goal_index = goal_index
                     self._goal_state = waypoints[goal_index]
+                    #self._goal_state[2] = 0
                 self._state = self._previous_state
                 self._stop_count = 0
 
@@ -192,22 +205,22 @@ class BehaviouralPlanner:
     # arc length (including closest_len) that is greater than or equal to self._lookahead.
     def compute_tl_goal(self, ego_state,tl_depth,waypoints,goal_index,DELTA_ORIENTATION=DELTA_ORIENTATION):
         yaw = ego_state[2] * 180 / np.pi
-        new_vel=0.0
+        new_vel=2.5
         if yaw >= 180 - DELTA_ORIENTATION or (yaw <= -180 + DELTA_ORIENTATION and yaw >= -180):
-            new_x = ego_state[0] - (tl_depth-1)
+            new_x = ego_state[0] - (tl_depth)
             new_y = ego_state[1]
 
         elif yaw <= -90 + DELTA_ORIENTATION and yaw >= -90 - DELTA_ORIENTATION:
             new_x = ego_state[0]
-            new_y = ego_state[1] - (tl_depth-1)
+            new_y = ego_state[1] - (tl_depth)
 
         elif yaw >= -DELTA_ORIENTATION and yaw <= DELTA_ORIENTATION:
-            new_x = ego_state[0] + (tl_depth-1)
+            new_x = ego_state[0] + (tl_depth)
             new_y = ego_state[1]
 
         elif yaw >= 90 - DELTA_ORIENTATION and yaw <= 90 + DELTA_ORIENTATION:
             new_x = ego_state[0]
-            new_y = ego_state[1] + (tl_depth-1)
+            new_y = ego_state[1] + (tl_depth)
 
         else:
             new_x = waypoints[goal_index][0]
@@ -215,6 +228,14 @@ class BehaviouralPlanner:
             new_vel = waypoints[goal_index][2]
         return [new_x, new_y, new_vel]
 
+    def manage_miss_detections(self,number_frame_limit=5):
+        if len(self._depth_history) >= number_frame_limit:
+            depth_flag = True
+            for d in self._depth_history[-number_frame_limit:]:
+                if d >= DECEL_THRESHOLD:
+                    depth_flag = False
+        if not depth_flag:
+            self._goal_state[2]+=0.5
     def get_goal_index(self, waypoints, ego_state, closest_len, closest_index):
         """Gets the goal index for the vehicle.
 
