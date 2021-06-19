@@ -6,14 +6,12 @@ from postprocessing import decode_netout
 # State machine states
 FOLLOW_LANE = 0
 TRAFFICLIGHT_STOP = 1
-STAY_STOPPED_TL = 2
-DANGEROUS = 3
+DANGEROUS = 2
 THRESH_PEDE = 5.0
 TL_FENCE_DISTANCE=2.5
 STOP_COUNTS = 3
 
 DECEL_THRESHOLD = 15 # distanza minima da dove cominciare a rallentare dal semaforo (spazio di frenata in funzione della velocità attuale)
-DEPTH_COMPARISON_LIST=[DECEL_THRESHOLD]*3
 LAST_CHECK_DISTANCE=7 #meters
 DELTA_ORIENTATION=15
 
@@ -101,9 +99,12 @@ class BehaviouralPlanner:
 
         print(f" speed: {ego_state[3]} depth: {tl_depth}")
 
+        if self._follow_lead_vehicle:
+            self._state = FOLLOW_LANE
 
         if self._state == FOLLOW_LANE:
             print("FOLLOW_LANE")
+            print("previous ", self._previous_state)
 
 
             if self._obstacle:
@@ -128,6 +129,7 @@ class BehaviouralPlanner:
                 if self._tl_state_history[-5:]==[2,2,2,2,2]:
                     self._previous_state=FOLLOW_LANE
 
+
                 if self._previous_state!=TRAFFICLIGHT_STOP:
                     if len(self._depth_history)>=3:
                         depth_flag=False
@@ -149,9 +151,6 @@ class BehaviouralPlanner:
                 self._previous_goal_state=self._goal_state
                 #closest_len, closest_index = get_closest_index(waypoints, ego_state)
 
-            elif self._follow_lead_vehicle:
-                self._previous_state = self._state
-                self._state=FOLLOW_LANE
             else:
                 if tl_depth<=LAST_CHECK_DISTANCE:
                     if self._tl_state_history[-3:]==[1,1,1]:
