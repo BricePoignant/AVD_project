@@ -125,6 +125,9 @@ class BehaviouralPlanner:
                 self._goal_index = goal_index
                 self._goal_state = waypoints[goal_index]
 
+                if self._tl_state_history[-5:]==[2,2,2,2,2]:
+                    self._previous_state=FOLLOW_LANE
+
                 if self._previous_state!=TRAFFICLIGHT_STOP:
                     if len(self._depth_history)>=3:
                         depth_flag=False
@@ -160,8 +163,6 @@ class BehaviouralPlanner:
                         self._previous_state = self._state
                         self._state = FOLLOW_LANE
                         self._handbrake = False
-                elif self._tl_state_history[-5:]==[2,2,2,2,2]:
-                    pass
 
         elif self._state == DANGEROUS:
             print("DANGEROUS")
