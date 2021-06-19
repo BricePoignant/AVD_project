@@ -38,12 +38,12 @@ from carla.planner.city_track import CityTrack
 
 
 ###############################################################################
-# CONFIGURABLE PARAMENTERS DURING EXAM
+# CONFIGURABLE PARAMETERS DURING EXAM
 ###############################################################################
-PLAYER_START_INDEX = 123          #  spawn index for player
-DESTINATION_INDEX = 127          # Setting a Destination
-NUM_PEDESTRIANS        = 100    # total number of pedestrians to spawn
-NUM_VEHICLES           = 150   # total number of vehicles to spawn
+PLAYER_START_INDEX = 59          #  spawn index for player
+DESTINATION_INDEX = 144          # Setting a Destination
+NUM_PEDESTRIANS        = 200   # total number of pedestrians to spawn
+NUM_VEHICLES           = 50   # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
 SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
 ###############################################################################àà
@@ -131,7 +131,7 @@ camera_parameters['height'] = 416
 camera_parameters['fov'] = 90
 
 camera_parameters['yaw'] = 0
-camera_parameters['pitch'] = 0+10
+camera_parameters['pitch'] = 0+15
 camera_parameters['roll'] = 0
 
 MAX_DEPTH=1000
@@ -629,7 +629,7 @@ def exec_waypoint_nav_demo(args):
 
         waypoints_route = mission_planner.compute_route(source, source_ori, destination, destination_ori)
         desired_speed = 5.0
-        turn_speed    = 2.5-0.5
+        turn_speed    = 2.5
 
         intersection_nodes = mission_planner.get_intersection_nodes()
 
@@ -922,6 +922,7 @@ def exec_waypoint_nav_demo(args):
         predict_collision = False
 
         for frame in range(TOTAL_EPISODE_FRAMES):
+
             # Gather current data from the CARLA server
             measurement_data, sensor_data = client.read_data()
 
@@ -965,7 +966,7 @@ def exec_waypoint_nav_demo(args):
             # to be operating at a frequency that is a division to the
             # simulation frequency.
             if frame % LP_FREQUENCY_DIVISOR == 0:
-
+                print(f"handbrake {bp._handbrake}")
                 depth_data = sensor_data.get('DepthCamera', None)
                 segmentation_data = sensor_data.get('SegmentationCamera', None)
                 # Compute open loop speed estimate.
@@ -993,7 +994,7 @@ def exec_waypoint_nav_demo(args):
                 bp._follow_lead_vehicle = False
                 obstacles = np.empty((0,2), dtype=float)
                 pedestrians = np.empty((0, 2), dtype=float)
-                pedestrians_ori=[]
+                pedestrians_info=[]
                 cars=np.empty((0, 2), dtype=float)
                 for agent in measurement_data.non_player_agents:
                     loc = agent.vehicle.transform.location
@@ -1005,7 +1006,7 @@ def exec_waypoint_nav_demo(args):
                             bp._follow_lead_vehicle_lookahead=LEAD_VEHICLE_LOOKAHEAD
                             bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
                         if (bp._follow_lead_vehicle == True and len(lead_car_state)==0):
-                            print("lead vehicle lookahead: ",bp._follow_lead_vehicle)
+
                             bp._follow_lead_vehicle = False
                             bp._follow_lead_vehicle_lookahead=LEAD_VEHICLE_ACTIVATION
                             bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
@@ -1018,7 +1019,7 @@ def exec_waypoint_nav_demo(args):
                     if agent.HasField('pedestrian') and (current_x-MAP_OBSTACLE_THRESHOLD < loc.x < current_x+MAP_OBSTACLE_THRESHOLD) and (current_y-MAP_OBSTACLE_THRESHOLD < loc.y < current_y+MAP_OBSTACLE_THRESHOLD):
                         dim = agent.pedestrian.bounding_box.extent
                         ori = agent.pedestrian.transform.rotation
-                        pedestrians_ori.append(ori.yaw * pi / 180)
+                        pedestrians_info.append([loc,ori.yaw * pi / 180])
                         pedestrians = np.vstack((pedestrians,np.array(obstacle_to_world(loc, dim, ori))))
                         obstacles = np.vstack((obstacles, np.array(obstacle_to_world(loc, dim, ori))))
                 print("lead vehicle: ",bp._follow_lead_vehicle)
@@ -1034,20 +1035,15 @@ def exec_waypoint_nav_demo(args):
                 paths = local_planner.transform_paths(paths, ego_state)
 
                 # Perform collision checking.
-                collision_check_array = lp._collision_checker.collision_check(paths, cars)
-
-
+                collision_check_array = lp._collision_checker.collision_check(paths, obstacles)
                 pedestrian_collision_check_array=lp._collision_checker.collision_check_pedestrian(paths, pedestrians)
 
                 print('pedestrian check array :',pedestrian_collision_check_array)
 
-                print('cars check array :',collision_check_array)
-
+                #print('cars check array :',collision_check_array)
+                # cars_collision=np.array(collision_check_array)
 
                 bp._obstacle = False
-
-                cars_collision=np.array(collision_check_array)
-
 
                 if len(pedestrian_collision_check_array)>=3:
                     is_active_collision = [False] * len(pedestrian_collision_check_array)
@@ -1056,50 +1052,16 @@ def exec_waypoint_nav_demo(args):
                 else:
                     is_active_collision = [True] * len(pedestrian_collision_check_array)
 
-                '''
-                if len(pedestrian_collision_check_array)>=3:
-                    if  not pedestrian_collision_check_array[-1]:
-                        is_active_collision[-2] = True
-                    elif not pedestrian_collision_check_array[0]:
-                        is_active_collision[1] = True
-
-
-                for i in range(len(pedestrian_collision_check_array)):
-                    if not pedestrian_collision_check_array[i] and is_active_collision[i]:
-                        bp._obstacle = True
-
-                
-                if False in pedestrian_collision_check_array: #or (np.all(cars_collision==False)):
-                    if len(pedestrian_collision_check_array)>=3:
-                        for p_ori in pedestrians_ori:
-                            print("angolo pedestrian :",p_ori)
-                            ego_ori=ego_state[2]
-                            ped_angle = abs(atan2(sin(ego_ori - p_ori), cos(ego_ori - p_ori)))*pi/180
-                            print("angolo compreso :",ped_angle)
-                            if ped_angle>=90-DELTA_ORIENTATION and ped_angle <=90+DELTA_ORIENTATION:
-
-                                if (p_ori>=180-DELTA_ORIENTATION and p_ori<=180) \
-                                        or (p_ori<=-180+DELTA_ORIENTATION and p_ori>=-180):
-                                        #or (p_ori<=90+DELTA_ORIENTATION and p_ori>=90-DELTA_ORIENTATION):
-                                    start_indx=mid
-                                    stop_indx=len(pedestrian_collision_check_array)
-
-                                elif (p_ori >= -90 - DELTA_ORIENTATION and p_ori <= -90+DELTA_ORIENTATION)\
-                                        or(p_ori >= -DELTA_ORIENTATION and p_ori <= DELTA_ORIENTATION):
-                                    start_indx = 0
-                                    stop_indx = mid
-                            for i in range(start_indx, stop_indx):
-                                if not is_active_collision[i]:
-                                    is_active_collision[i] = True
-                '''
                 if False in pedestrian_collision_check_array:  # or (np.all(cars_collision==False)):
                     if len(pedestrian_collision_check_array) >= 3:
-                        for p_ori in pedestrians_ori:
+                        for p in pedestrians_info:
 
+                            p_x,p_y,p_ori=p[0].x,p[0].y,p[1]
                             ego_ori = ego_state[2]
                             ped_angle = abs(atan2(sin(ego_ori - p_ori), cos(ego_ori - p_ori))) * 180/pi
 
                             if ped_angle >= 90 - DELTA_ORIENTATION and ped_angle <= 90 + DELTA_ORIENTATION:
+
                                 for i in range(1, mid):
                                     if not is_active_collision[i]:
                                         is_active_collision[i] = True
@@ -1111,23 +1073,45 @@ def exec_waypoint_nav_demo(args):
                         if not pedestrian_collision_check_array[i] and is_active_collision[i]:
                             bp._obstacle = True
 
-                print('is_activate:', is_active_collision)
+                print('is_activated:', is_active_collision)
 
-                print("collision ",bp._obstacle)
+
                 # Compute the best local path.
                 best_index = lp._collision_checker.select_best_path_index(paths, collision_check_array, bp._goal_state)
                 # If no path was feasible, continue to follow the previous best path.
                 if best_index == None:
                     best_path = lp._prev_best_path
+                    '''
+                    if collisioni con tutti:
+                        dipende da dove giro e assegno il path estremo in quella direzione
+                        
+                    '''
                 else:
                     best_path = paths[best_index]
                     lp._prev_best_path = best_path
 
+
                 if best_path is not None:
                     # Compute the velocity profile for the path, and compute the waypoints.
                     desired_speed = bp._goal_state[2]
-                    decelerate_to_tl = bp._state == behavioural_planner.DECELERATE_TO_TRAFFICLIGHT
+                    decelerate_to_tl = bp._state == behavioural_planner.TRAFFICLIGHT_STOP
+
+                    if bp._obstacle and bp._follow_lead_vehicle:
+                        ped_x,ped_y=loc.x,loc.y
+                        ego_x,ego_y=ego_state[0],ego_state[1]
+                        lead_x,lead_y=lead_car_state[0],lead_car_state[1]
+                        dist_lead=np.sqrt((lead_x-ego_x)**2+(lead_y-ego_y)**2)
+                        dist_ped=np.sqrt((ped_x-ego_x)**2+(ped_y-ego_y)**2)
+                        if dist_ped<dist_lead:
+                            bp._follow_lead_vehicle=False
+                        else:
+                            bp._obstacle=False
+
+                    print("collision ", bp._obstacle)
+                    print("lead vehicle: ", bp._follow_lead_vehicle)
+
                     local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_tl, lead_car_state, bp._follow_lead_vehicle)
+
 
                     if local_waypoints != None:
                         # Update the controller waypoint path with the best local path.
@@ -1178,10 +1162,27 @@ def exec_waypoint_nav_demo(args):
                                          current_timestamp, frame)
                 controller.update_controls()
                 cmd_throttle, cmd_steer, cmd_brake = controller.get_commands()
+
             else:
                 cmd_throttle = 0.0
                 cmd_steer = 0.0
                 cmd_brake = 0.0
+
+            # Brake if there is a pedestrian close by
+
+            if bp._obstacle:
+                ego_ori=ego_state[2]
+                for p in pedestrians_info:
+                    p_ori=p[1]
+                    ped_angle = abs(atan2(sin(ego_ori - p_ori), cos(ego_ori - p_ori))) * 180 / pi
+                    if ped_angle >= 90 - DELTA_ORIENTATION and ped_angle <= 90 + DELTA_ORIENTATION or True:
+                        p_x,p_y=p[0].x,p[0].y
+                        dist_ped=np.sqrt((p_x-ego_state[0])**2+(p_y-ego_state[1])**2)
+                        if dist_ped <= 6:
+                           cmd_brake= 1.0
+
+            if bp._handbrake:
+                cmd_brake = 1
 
             # Skip the first frame or if there exists no local paths
             if skip_first_frame and frame == 0:
@@ -1266,11 +1267,13 @@ def exec_waypoint_nav_demo(args):
                     lp_1d.refresh()
                     live_plot_timer.lap()
 
+
             # Output controller command to CARLA server
             send_control_command(client,
                                  throttle=cmd_throttle,
                                  steer=cmd_steer,
                                  brake=cmd_brake)
+
             print('---------------------------------------------')
             # Find if reached the end of waypoint. If the car is within
             # DIST_THRESHOLD_TO_LAST_WAYPOINT to the last waypoint,

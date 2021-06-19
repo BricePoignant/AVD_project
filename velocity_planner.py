@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 from math import sin, cos, pi, sqrt
-
+LAST_CHECK_DISTANCE=7
 class VelocityPlanner:
     def __init__(self, time_gap, a_max, slow_speed, stop_line_buffer):
         self._time_gap         = time_gap
@@ -36,6 +36,7 @@ class VelocityPlanner:
                 v2 = self._prev_trajectory[i+1][2]
                 v_delta = v2 - v1
                 interpolation_ratio = timestep / time_delta
+
                 return v1 + interpolation_ratio * v_delta
 
             # Otherwise, keep checking.
@@ -114,7 +115,13 @@ class VelocityPlanner:
         start_speed = ego_state[3]
         # Generate a trapezoidal profile to decelerate to stop.
         if decelerate_to_stop:
-            profile = self.decelerate_profile(path, start_speed)
+            end_x,end_y=path[-1][0],path[-1][1]
+            my_x,my_y=ego_state[0],ego_state[1]
+            dist=np.sqrt((end_x-my_x)**2+(end_y-my_y)**2)
+            if dist>=LAST_CHECK_DISTANCE:
+                profile = self.nominal_profile(path, start_speed, desired_speed)
+            else:
+                profile = self.decelerate_profile(path, start_speed)
 
         # If we need to follow the lead vehicle, make sure we decelerate to its
         # speed by the time we reach the time gap point.

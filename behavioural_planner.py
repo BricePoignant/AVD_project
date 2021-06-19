@@ -5,11 +5,11 @@ from postprocessing import decode_netout
 
 # State machine states
 FOLLOW_LANE = 0
-DECELERATE_TO_TRAFFICLIGHT = 1
+TRAFFICLIGHT_STOP = 1
 STAY_STOPPED_TL = 2
 DANGEROUS = 3
 THRESH_PEDE = 5.0
-
+TL_FENCE_DISTANCE=2.5
 STOP_COUNTS = 3
 
 DECEL_THRESHOLD = 15 # distanza minima da dove cominciare a rallentare dal semaforo (spazio di frenata in funzione della velocità attuale)
@@ -29,13 +29,14 @@ class BehaviouralPlanner:
         self._stop_count = 0
         self._lookahead_collision_index = 0
         self._model = model
-        self._previous_state = None
+        self._previous_state = -1
         self._stop_count = 0
         self._desired_speed = desired_speed
         self._STOP_THRESHOLD_TL = 0
         self._indx_intersections=indx_intersections
         self._tl_state_history=[]
         self._depth_history=[]
+        self._handbrake=False
 
 
     def set_lookahead(self, lookahead):
@@ -102,93 +103,85 @@ class BehaviouralPlanner:
 
 
         if self._state == FOLLOW_LANE:
+            print("FOLLOW_LANE")
+
+
             if self._obstacle:
                 self._previous_state = self._state
                 self._state = DANGEROUS
-
-
-                closest_len, closest_index = get_closest_index(waypoints, ego_state)
-                
-                self._goal_state[2]=0
+                self._previous_goal_state = self._goal_state
             else:
-                print("FOLLOW_LANE")
                 # First, find the closest index to the ego vehicle.
                 closest_len, closest_index = get_closest_index(waypoints, ego_state)
 
                 # Next, find the goal index that lies within the lookahead distance
                 # along the waypoints.
                 goal_index = self.get_goal_index(waypoints, ego_state, closest_len, closest_index)
-                while waypoints[goal_index][2] <= 0.1: goal_index += 1
+
+                #while waypoints[goal_index][2] <= 0.1: goal_index += 1
 
                 #_,intersect_found = self.check_for_intersection(waypoints, closest_index, goal_index)
                 #print("intersezione ",intersect_found)
                 self._goal_index = goal_index
                 self._goal_state = waypoints[goal_index]
 
-                if len(self._depth_history)>=3:
-                    depth_flag=True
-                    for d in self._depth_history[-3:]:
-                        if d>=DECEL_THRESHOLD:
-                            depth_flag=False
-                    if depth_flag and tl_depth>=LAST_CHECK_DISTANCE and tl_depth!=1000:
-                        self._goal_state=self.compute_tl_goal(ego_state,tl_depth,waypoints,goal_index,DELTA_ORIENTATION)
-                        self._state = DECELERATE_TO_TRAFFICLIGHT
+                if self._previous_state!=TRAFFICLIGHT_STOP:
+                    if len(self._depth_history)>=3:
+                        depth_flag=False
+                        for d in self._depth_history[-3:]:
+                            if d<=DECEL_THRESHOLD:
+                                depth_flag=True
+                        if depth_flag:
+                            self._goal_state=self.compute_tl_goal(ego_state,tl_depth,waypoints,goal_index,DELTA_ORIENTATION)
+                            self._previous_state = self._state
+                            self._state = TRAFFICLIGHT_STOP
 
-        elif self._state == DECELERATE_TO_TRAFFICLIGHT:
+        elif self._state == TRAFFICLIGHT_STOP:
 
-            print("DECELERATE TO TRAFFIC LIGHT")
+            print("TRAFFICLIGHT_STOP")
 
             if self._obstacle:
                 self._previous_state = self._state
                 self._state = DANGEROUS
-                closest_len, closest_index = get_closest_index(waypoints, ego_state)
-                self._goal_state[2]=0
+                self._previous_goal_state=self._goal_state
+                #closest_len, closest_index = get_closest_index(waypoints, ego_state)
+
             elif self._follow_lead_vehicle:
+                self._previous_state = self._state
                 self._state=FOLLOW_LANE
             else:
                 if tl_depth<=LAST_CHECK_DISTANCE:
                     if self._tl_state_history[-3:]==[1,1,1]:
                         self._goal_state[2] = 0
-                        self._state = STAY_STOPPED_TL
+                        if tl_depth<=3.5:
+                            self._handbrake = True
+
                     elif self._tl_state_history[-3:]==[0,0,0]:
+                        self._previous_state = self._state
                         self._state = FOLLOW_LANE
-                else: #caso miss detections
-                    self.manage_miss_detections(number_frame_limit=3)
-
-        elif self._state == STAY_STOPPED_TL:
-            print("STAY STOPPED TL")
-            if self._obstacle:
-
-                self._previous_state = self._state
-                self._state = DANGEROUS
-                closest_len, closest_index = get_closest_index(waypoints, ego_state)
-                self._goal_state[2]=0
-            else:
-
-                if self._tl_state_history[-3:]==[0,0,0]:
-                    closest_len, closest_index = get_closest_index(waypoints, ego_state)
-                    goal_index = self.get_goal_index(waypoints, ego_state, closest_len, closest_index)
-                    while waypoints[goal_index][2] <= 0.1: goal_index += 1
-                    self._goal_index = goal_index
-                    self._goal_state = waypoints[goal_index]
-                    self._state = FOLLOW_LANE
-                elif self._tl_state_history[-3:] == [1, 1, 1]:
-                    self._goal_state[2]=0
-
-                else:
-                    self.manage_miss_detections(number_frame_limit=3)
+                        self._handbrake = False
+                elif self._tl_state_history[-5:]==[2,2,2,2,2]:
+                    pass
 
         elif self._state == DANGEROUS:
             print("DANGEROUS")
 
+            if  ego_state[3]>=2.0:
+                if self._goal_state[2]<=0:
+                    self._goal_state[2]=0
+                else:
+                    self._goal_state[2] = 1.5
+
             if self._stop_count == STOP_COUNTS:
-                if self._previous_state==FOLLOW_LANE:
-                    closest_len, closest_index = get_closest_index(waypoints, ego_state)
-                    goal_index = self.get_goal_index(waypoints, ego_state, closest_len, closest_index)
-                    self._goal_index = goal_index
-                    self._goal_state = waypoints[goal_index]
-                    #self._goal_state[2] = 0
-                self._state = self._previous_state
+                if not self._obstacle:
+                    if self._previous_state==FOLLOW_LANE:
+                        self._state = self._previous_state
+                        self._goal_state=self._previous_goal_state
+
+                    elif self._previous_state==TRAFFICLIGHT_STOP:
+                        self._state = self._previous_state
+                        self._goal_state=self._previous_goal_state
+
                 self._stop_count = 0
 
             # Otherwise, continue counting.
@@ -227,7 +220,7 @@ class BehaviouralPlanner:
             new_y = waypoints[goal_index][1]
             new_vel = waypoints[goal_index][2]
         return [new_x, new_y, new_vel]
-
+    '''
     def manage_miss_detections(self,number_frame_limit=5):
         if len(self._depth_history) >= number_frame_limit:
             depth_flag = True
@@ -235,7 +228,11 @@ class BehaviouralPlanner:
                 if d >= DECEL_THRESHOLD:
                     depth_flag = False
         if not depth_flag:
-            self._goal_state[2]+=0.5
+            if self._state==DECELERATE_TO_TRAFFICLIGHT:
+                self._goal_state[2] = 2.5
+            else:
+                self._goal_state[2]+=0.5
+    '''
     def get_goal_index(self, waypoints, ego_state, closest_len, closest_index):
         """Gets the goal index for the vehicle.
 
