@@ -1035,7 +1035,7 @@ def exec_waypoint_nav_demo(args):
                 paths = local_planner.transform_paths(paths, ego_state)
 
                 # Perform collision checking.
-                collision_check_array = lp._collision_checker.collision_check(paths, obstacles)
+                collision_check_array = lp._collision_checker.collision_check(paths, cars)
                 pedestrian_collision_check_array=lp._collision_checker.collision_check_pedestrian(paths, pedestrians)
 
                 print('pedestrian check array :',pedestrian_collision_check_array)
