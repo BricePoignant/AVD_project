@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 import math
+import copy
 from postprocessing import decode_netout
 
 # State machine states
@@ -95,6 +96,7 @@ class BehaviouralPlanner:
 
         self._depth_history.append(tl_depth)
         self._tl_state_history.append(traffic_light_state)
+        self._handbrake=False
         #yaw_degree = ego_state[2] * 180 / np.pi
 
         print(f" speed: {ego_state[3]} depth: {tl_depth}")
@@ -110,7 +112,7 @@ class BehaviouralPlanner:
             if self._obstacle:
                 self._previous_state = self._state
                 self._state = DANGEROUS
-                self._previous_goal_state = self._goal_state
+                self._previous_goal_state = copy.deepcopy(self._goal_state)
             else:
                 # First, find the closest index to the ego vehicle.
                 closest_len, closest_index = get_closest_index(waypoints, ego_state)
@@ -141,6 +143,7 @@ class BehaviouralPlanner:
                             self._previous_state = self._state
                             self._state = TRAFFICLIGHT_STOP
 
+
         elif self._state == TRAFFICLIGHT_STOP:
 
             print("TRAFFICLIGHT_STOP")
@@ -148,7 +151,7 @@ class BehaviouralPlanner:
             if self._obstacle:
                 self._previous_state = self._state
                 self._state = DANGEROUS
-                self._previous_goal_state=self._goal_state
+                self._previous_goal_state=copy.deepcopy(self._goal_state)
                 #closest_len, closest_index = get_closest_index(waypoints, ego_state)
 
             else:
@@ -158,17 +161,23 @@ class BehaviouralPlanner:
                         if tl_depth<=3.5:
                             self._handbrake = True
 
-                    elif self._tl_state_history[-3:]==[0,0,0]:
+                    elif self._tl_state_history[-6:]==[0,0,0,0,0,0]:
                         self._previous_state = self._state
                         self._state = FOLLOW_LANE
-                        self._handbrake = False
+
+                elif self._tl_state_history[-5:]==[2,2,2,2,2] and ego_state[3]<=0.5:
+
+                    self._goal_state[2]=1.5
+
+
+
 
         elif self._state == DANGEROUS:
             print("DANGEROUS")
 
-            if  ego_state[3]>=2.0:
-                if self._goal_state[2]<=0:
-                    self._goal_state[2]=0
+            if  ego_state[3] >= 2.0:
+                if self._goal_state[2] <= 0:
+                    self._goal_state[2] = 0
                 else:
                     self._goal_state[2] = 1.5
 

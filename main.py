@@ -40,8 +40,8 @@ from carla.planner.city_track import CityTrack
 ###############################################################################
 # CONFIGURABLE PARAMETERS DURING EXAM
 ###############################################################################
-PLAYER_START_INDEX = 130          #  spawn index for player
-DESTINATION_INDEX = 5          # Setting a Destination
+PLAYER_START_INDEX =62        #  spawn index for player
+DESTINATION_INDEX = 145         # Setting a Destination
 NUM_PEDESTRIANS        = 200   # total number of pedestrians to spawn
 NUM_VEHICLES           = 50   # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
@@ -212,7 +212,7 @@ def obstacle_to_world(location, dimensions, orientation):
 global cnt_image_name
 cnt_image_name=0
 def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
-    global cnt_image_name
+    #global cnt_image_name
     showing_dims=(416,416)
     if sensor_data.get("CameraRGB", None) is not None:
         # Camera BGR data
@@ -234,12 +234,12 @@ def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
             box.ymax+=box.ymax*percentage
 
             plt_image=draw_boxes(image_BGR,[box],["go", "stop"])
-            filename=f"{cnt_image_name}_{bp._state}_{ego_state[3]}.jpg"
+            #filename=f"{cnt_image_name}_{bp._state}_{ego_state[3]}.jpg"
 
             cv2.imshow("BGRA_IMAGE", plt_image)
             cv2.waitKey(1)
-            cv2.imwrite("images/"+filename,plt_image)
-            cnt_image_name+=1
+            #cv2.imwrite("images/"+filename,plt_image)
+            #cnt_image_name+=1
 
             return label,box
 
@@ -918,9 +918,6 @@ def exec_waypoint_nav_demo(args):
         prev_collision_pedestrians = 0
         prev_collision_other       = 0
 
-        # Initialize collision prediction
-        predict_collision = False
-
         for frame in range(TOTAL_EPISODE_FRAMES):
 
             # Gather current data from the CARLA server
@@ -1012,6 +1009,10 @@ def exec_waypoint_nav_demo(args):
                             bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
                             if (bp._follow_lead_vehicle == True):
                                 lead_car_state = [loc.x, loc.y, agent.vehicle.forward_speed]
+                                dist_lead_car = np.sqrt((loc.x - ego_state[0]) ** 2 + (loc.y - ego_state[1]) ** 2)
+                                if dist_lead_car < 6:
+                                    bp._handbrake = True
+
                         else:
                             obstacles=np.vstack((obstacles,np.array(obstacle_to_world(loc, dim, ori))))
                             cars = np.vstack((cars, np.array(obstacle_to_world(loc, dim, ori))))
@@ -1041,7 +1042,7 @@ def exec_waypoint_nav_demo(args):
                 print('pedestrian check array :',pedestrian_collision_check_array)
 
                 #print('cars check array :',collision_check_array)
-                # cars_collision=np.array(collision_check_array)
+                cars_collision=np.array(collision_check_array)
 
                 bp._obstacle = False
 
@@ -1081,11 +1082,11 @@ def exec_waypoint_nav_demo(args):
                 # If no path was feasible, continue to follow the previous best path.
                 if best_index == None:
                     best_path = lp._prev_best_path
-                    '''
-                    if collisioni con tutti:
-                        dipende da dove giro e assegno il path estremo in quella direzione
-                        
-                    '''
+                    if  np.all(cars_collision==False):
+                        if len(paths)>0:
+                            print('ho scelto il path a destra')
+                            best_path=paths[-1]
+
                 else:
                     best_path = paths[best_index]
                     lp._prev_best_path = best_path
@@ -1178,11 +1179,12 @@ def exec_waypoint_nav_demo(args):
                     if ped_angle >= 90 - DELTA_ORIENTATION and ped_angle <= 90 + DELTA_ORIENTATION or True:
                         p_x,p_y=p[0].x,p[0].y
                         dist_ped=np.sqrt((p_x-ego_state[0])**2+(p_y-ego_state[1])**2)
-                        if dist_ped <= 6:
-                           cmd_brake= 1.0
+                        if dist_ped <= 4.5:
+                            bp._handbrake=True
 
-            if bp._handbrake:
+            if bp._handbrake :
                 cmd_brake = 1
+
 
             # Skip the first frame or if there exists no local paths
             if skip_first_frame and frame == 0:
