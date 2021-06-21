@@ -2,6 +2,9 @@
 import numpy as np
 import math
 import copy
+import sys,os
+sys.path.append(os.path.abspath(sys.path[0] + '/..'))
+from carla.image_converter import labels_to_array
 from postprocessing import decode_netout
 
 # State machine states
@@ -42,7 +45,7 @@ class BehaviouralPlanner:
         self._lookahead = lookahead
 
     # Handles state transitions and computes the goal state.
-    def transition_state(self, waypoints, ego_state, closed_loop_speed, tl_depth, traffic_light_state):
+    def transition_state(self, waypoints, ego_state, closed_loop_speed, tl_depth, traffic_light_state,segmentation_data,camera_w,camera_h):
         """Handles state transitions and computes the goal state.
 
         args:
@@ -156,9 +159,9 @@ class BehaviouralPlanner:
 
             else:
                 if tl_depth<=LAST_CHECK_DISTANCE:
-                    if self._tl_state_history[-3:]==[1,1,1]:
+                    if self._tl_state_history[-2:]==[1,1]:
                         self._goal_state[2] = 0
-                        if tl_depth<=3.5:
+                        if tl_depth<=4:
                             self._handbrake = True
 
                     elif self._tl_state_history[-6:]==[0,0,0,0,0,0]:
@@ -166,8 +169,17 @@ class BehaviouralPlanner:
                         self._state = FOLLOW_LANE
 
                 elif self._tl_state_history[-5:]==[2,2,2,2,2] and ego_state[3]<=0.5:
-
                     self._goal_state[2]=1.5
+                else:
+                    if self._tl_state_history[-7:]==[2,2,2,2,2,2,2]:
+                        '''
+                        existing_tl=segmentation_check(segmentation_data,camera_w,camera_h)
+                        if not existing_tl:
+                            self._previous_state = self._state
+                            self._state = FOLLOW_LANE
+                        '''
+                        self._previous_state = self._state
+                        self._state = FOLLOW_LANE
 
 
 
@@ -426,3 +438,13 @@ def pointOnSegment(p1, p2, p3):
         return True
     else:
         return False
+
+def segmentation_check(segmentation_data, camera_w, camera_h):
+    segmentation_data = labels_to_array(segmentation_data)
+    found_tl = False
+    for i in range(0, camera_w):
+        for j in range(0, camera_h):
+            if segmentation_data[j][i] == 12:
+                found_tl = True
+                return found_tl
+    return found_tl

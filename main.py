@@ -40,8 +40,8 @@ from carla.planner.city_track import CityTrack
 ###############################################################################
 # CONFIGURABLE PARAMETERS DURING EXAM
 ###############################################################################
-PLAYER_START_INDEX =62        #  spawn index for player
-DESTINATION_INDEX = 145         # Setting a Destination
+PLAYER_START_INDEX =2       #  spawn index for player
+DESTINATION_INDEX =  23    # Setting a Destination
 NUM_PEDESTRIANS        = 200   # total number of pedestrians to spawn
 NUM_VEHICLES           = 50   # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
@@ -124,14 +124,15 @@ CONTROLLER_OUTPUT_FOLDER = os.path.dirname(os.path.realpath(__file__)) +\
 # Camera parameters
 camera_parameters = {}
 camera_parameters['x'] = 1.8+0.5
-camera_parameters['y'] = 0+0.8+0.2
+camera_parameters['y'] = 0+0.8+0.2+0.3
 camera_parameters['z'] = 1.3
 camera_parameters['width'] = 416
 camera_parameters['height'] = 416
-camera_parameters['fov'] = 90
+camera_parameters['fov'] = 60
+
 
 camera_parameters['yaw'] = 0
-camera_parameters['pitch'] = 0+15
+camera_parameters['pitch'] = 0+10
 camera_parameters['roll'] = 0
 
 MAX_DEPTH=1000
@@ -226,6 +227,7 @@ def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
         plt_image=image_BGR
         percentage=0.03
         for box in netout:
+
             label=box.get_label()
 
             box.xmin-=box.xmin*percentage
@@ -757,17 +759,7 @@ def exec_waypoint_nav_demo(args):
 
                 previuos_waypoint = waypoint
 
-        '''
-        for i in range(len(waypoints)):
-            for indx in indx_intersections:
-                if i == indx:
-                    waypoints[i][2]=2.5
-        '''
         waypoints = np.array(waypoints)
-
-        path_file='C:/Users/ldima/Desktop/CarlaSimulator/PythonClient/AVD_project_codebase-main/'
-        wp_name=path_file+str(PLAYER_START_INDEX)+'_'+str(DESTINATION_INDEX)+'.csv'
-        # np.savetxt(wp_name,waypoints,delimiter='|')
 
         #############################################
         # Controller 2D Class Declaration
@@ -984,7 +976,7 @@ def exec_waypoint_nav_demo(args):
                 if tl_state !=2 and segmentation_data is not None:
                     tl_depth=compute_depth_tl(segmentation_data,depth_data,tl_box)
 
-                bp.transition_state(waypoints, ego_state, current_speed,tl_depth,tl_state)
+                bp.transition_state(waypoints, ego_state, current_speed,tl_depth,tl_state,segmentation_data,camera_parameters['width'],camera_parameters['height'])
 
                 # Update the obstacles list and check to see if we need to follow the lead vehicle.
                 lead_car_state = []
@@ -1003,7 +995,6 @@ def exec_waypoint_nav_demo(args):
                             bp._follow_lead_vehicle_lookahead=LEAD_VEHICLE_LOOKAHEAD
                             bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
                         if (bp._follow_lead_vehicle == True and len(lead_car_state)==0):
-
                             bp._follow_lead_vehicle = False
                             bp._follow_lead_vehicle_lookahead=LEAD_VEHICLE_ACTIVATION
                             bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
@@ -1012,7 +1003,6 @@ def exec_waypoint_nav_demo(args):
                                 dist_lead_car = np.sqrt((loc.x - ego_state[0]) ** 2 + (loc.y - ego_state[1]) ** 2)
                                 if dist_lead_car < 6:
                                     bp._handbrake = True
-
                         else:
                             obstacles=np.vstack((obstacles,np.array(obstacle_to_world(loc, dim, ori))))
                             cars = np.vstack((cars, np.array(obstacle_to_world(loc, dim, ori))))
@@ -1023,7 +1013,6 @@ def exec_waypoint_nav_demo(args):
                         pedestrians_info.append([loc,ori.yaw * pi / 180])
                         pedestrians = np.vstack((pedestrians,np.array(obstacle_to_world(loc, dim, ori))))
                         obstacles = np.vstack((obstacles, np.array(obstacle_to_world(loc, dim, ori))))
-                print("lead vehicle: ",bp._follow_lead_vehicle)
 
                 # Compute the goal state set from the behavioural planner's computed goal state.
                 goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
@@ -1382,6 +1371,7 @@ def compute_depth_tl(segmentation_data, depth_data, tl_box):
     top_left_y = int(top_left_point[1] * 416)
     bottom_right_y = int(bottom_right_point[1] * 416)
     image_w,image_h=camera_parameters['width'],camera_parameters['height']
+
 
     if (top_left_x > image_w ): top_left_x = image_w
     if (bottom_right_x > image_w): bottom_right_x = image_w
