@@ -60,7 +60,7 @@ class VelocityPlanner:
     # Recall that the path is of the form [x_points, y_points, t_points].
     def compute_velocity_profile(self, path, desired_speed, ego_state, 
                                  closed_loop_speed, decelerate_to_stop, 
-                                 lead_car_state, follow_lead_vehicle):
+                                 lead_car_state, follow_lead_vehicle,emergency_brake):
         """Computes the velocity profile for the local planner path.
         
         args:
@@ -113,16 +113,21 @@ class VelocityPlanner:
         profile = []
         # For our profile, use the open loop speed as our initial speed.
         start_speed = ego_state[3]
-        # Generate a trapezoidal profile to decelerate to stop.
-        if decelerate_to_stop:
+
+        if emergency_brake:
+            desired_speed=0.0
+            profile = self.nominal_profile(path, start_speed, desired_speed)
+        # check if the ego_vehicle is in TRAFFICLIGHT_STOP state
+        elif decelerate_to_stop:
+            #compute the distance between ego_vehicle and the traffic light goal_state
             end_x,end_y=path[-1][0],path[-1][1]
             my_x,my_y=ego_state[0],ego_state[1]
             dist=np.sqrt((end_x-my_x)**2+(end_y-my_y)**2)
+            #if the distance is less than LAST_CHECK_DISTANCE generate a trapezoidal profile to decelerate
             if dist>=LAST_CHECK_DISTANCE:
                 profile = self.nominal_profile(path, start_speed, desired_speed)
             else:
                 profile = self.decelerate_profile(path, start_speed)
-
         # If we need to follow the lead vehicle, make sure we decelerate to its
         # speed by the time we reach the time gap point.
         elif lead_car_state is not None and follow_lead_vehicle:

@@ -40,13 +40,14 @@ from carla.planner.city_track import CityTrack
 ###############################################################################
 # CONFIGURABLE PARAMETERS DURING EXAM
 ###############################################################################
-PLAYER_START_INDEX =2       #  spawn index for player
-DESTINATION_INDEX =  23    # Setting a Destination
+PLAYER_START_INDEX = 27       #  spawn index for player
+DESTINATION_INDEX =  124     # Setting a Destination
 NUM_PEDESTRIANS        = 200   # total number of pedestrians to spawn
-NUM_VEHICLES           = 50   # total number of vehicles to spawn
+NUM_VEHICLES           = 50  # total number of vehicles to spawn
+
 SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
 SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
-###############################################################################àà
+###############################################################################
 
 ITER_FOR_SIM_TIMESTEP  = 10     # no. iterations to compute approx sim timestep
 WAIT_TIME_BEFORE_START = 1.00   # game seconds (time before controller start)
@@ -84,12 +85,10 @@ PLOT_HEIGHT        = 0.8
 
 DIST_THRESHOLD_TO_LAST_WAYPOINT = 2.0  # some distance from last position before
                                        # simulation ends
-DELTA_ORIENTATION=15
+DELTA_ORIENTATION=45
 # Planning Constants
 NUM_PATHS = 7
-###################################################################RICORDA DI PROVARE A DIMINUIRE###################################################################
 BP_LOOKAHEAD_BASE      = 16.0            # m
-######################################################################################################################################
 BP_LOOKAHEAD_TIME      = 1.0              # s
 PATH_OFFSET            = 1.5        # m
 CIRCLE_OFFSETS         = [-1.0, 1.0, 3.0] # m
@@ -99,7 +98,7 @@ PATH_SELECT_WEIGHT     = 10
 A_MAX                  = 2.5              # m/s^2
 SLOW_SPEED             = 2.0              # m/s
 STOP_LINE_BUFFER       = 3.5              # m
-LEAD_VEHICLE_LOOKAHEAD = 20.0 +3.0        # m Treshold at which we stop considering the lead vehicle as an obstacle
+LEAD_VEHICLE_LOOKAHEAD = 25               # m Treshold at which we stop considering the lead vehicle as an obstacle
 LEAD_VEHICLE_ACTIVATION = 13              # m Treshold at which the velocity planner accept the lead vehicle
 LP_FREQUENCY_DIVISOR   = 2                # Frequency divisor to make the 
                                           # local planner operate at a lower
@@ -123,8 +122,8 @@ CONTROLLER_OUTPUT_FOLDER = os.path.dirname(os.path.realpath(__file__)) +\
 
 # Camera parameters
 camera_parameters = {}
-camera_parameters['x'] = 1.8+0.5
-camera_parameters['y'] = 0+0.8+0.2+0.3
+camera_parameters['x'] = 2.3
+camera_parameters['y'] = 1.3
 camera_parameters['z'] = 1.3
 camera_parameters['width'] = 416
 camera_parameters['height'] = 416
@@ -132,10 +131,10 @@ camera_parameters['fov'] = 60
 
 
 camera_parameters['yaw'] = 0
-camera_parameters['pitch'] = 0+10
+camera_parameters['pitch'] = 10
 camera_parameters['roll'] = 0
 
-MAX_DEPTH=1000
+MAX_DEPTH=1000 #default value of traffic light depth
 
 # Model initialization for detector
 model = get_model_from_file()
@@ -210,10 +209,11 @@ def obstacle_to_world(location, dimensions, orientation):
     
     return box_pts
 
-global cnt_image_name
-cnt_image_name=0
-def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
-    #global cnt_image_name
+def check_for_traffic_light(sensor_data):
+    '''
+    Check if there is a traffic light and return its label and the associated bounding box.
+    label ---->  [0,1,2] = [GO,STOP,NO_TRAFFIC_LIGHT]
+    '''
     showing_dims=(416,416)
     if sensor_data.get("CameraRGB", None) is not None:
         # Camera BGR data
@@ -223,31 +223,261 @@ def check_for_traffic_light(bp,ego_state,sensor_data,camera_parameters):
         image_RGB = cv2.resize(image_RGB, showing_dims)
         image_RGB = image_RGB / 255
         image_RGB = np.expand_dims(image_RGB, 0)
-        _, netout = detect_image(image_RGB, image_BGR2, model)
+        _, netout = detect_image(image_RGB, image_BGR2, model) #perform object detection
         plt_image=image_BGR
-        percentage=0.03
+        percentage=0.03 #percentage used to increase the bounding box
         for box in netout:
-
             label=box.get_label()
-
+            #enlarge the bounding box of the fixed percentage
             box.xmin-=box.xmin*percentage
             box.ymin-=box.ymin*percentage
             box.xmax+=box.xmax*percentage
             box.ymax+=box.ymax*percentage
 
-            plt_image=draw_boxes(image_BGR,[box],["go", "stop"])
-            #filename=f"{cnt_image_name}_{bp._state}_{ego_state[3]}.jpg"
-
+            plt_image=draw_boxes(image_BGR,[box],["go", "stop"])  #draw enlarged bounding box in image and show it
             cv2.imshow("BGRA_IMAGE", plt_image)
             cv2.waitKey(1)
-            #cv2.imwrite("images/"+filename,plt_image)
-            #cnt_image_name+=1
 
             return label,box
 
         cv2.imshow("BGRA_IMAGE", plt_image)
         cv2.waitKey(1)
         return 2,None
+
+
+def compute_depth_tl(segmentation_data, depth_data, tl_box):
+    '''
+    Take the bounding box to check if there is a traffic light within, using a segmentation camera. If it is inside, compute
+    the depth between the camera and  the traffic light.
+    '''
+    segmentation_data = labels_to_array(segmentation_data)
+    #resize the bounding box according to the camera parameters and perform correction if the bounding box is outside of the image.
+    top_left_point, bottom_right_point = (tl_box.xmin, tl_box.ymin), (tl_box.xmax, tl_box.ymax)
+    top_left_x = int(top_left_point[0] * 416)
+    bottom_right_x = int(bottom_right_point[0] * 416)
+    top_left_y = int(top_left_point[1] * 416)
+    bottom_right_y = int(bottom_right_point[1] * 416)
+    image_w,image_h=camera_parameters['width'],camera_parameters['height']
+    if (top_left_x > image_w ): top_left_x = image_w
+    if (bottom_right_x > image_w): bottom_right_x = image_w
+    if (top_left_y > image_h): top_left_y = image_h
+    if ( bottom_right_y > image_h):  bottom_right_y = image_h
+    if (top_left_x < 0 ): top_left_x = 0
+    if (bottom_right_x < 0): bottom_right_x = 0
+    if (top_left_y < 0): top_left_y = 0
+    if ( bottom_right_y < 0):  bottom_right_y = 0
+
+    #check if the bounding box contains the traffic light
+    found_tl=False
+    for i in range(top_left_x, bottom_right_x):
+        for j in range(top_left_y, bottom_right_y):
+            if segmentation_data[j][i] == 12:
+                found_tl=True
+                break
+        if segmentation_data[j][i] == 12:
+            break
+
+    #compute the depth on the [j,1] pixel
+    depth_data = depth_to_array(depth_data)
+    if found_tl:
+        tl_depth = depth_data[j][i] * 1000  # Consider depth in meters
+    else:
+        tl_depth=1000
+    return tl_depth
+
+def emergency_break_pedestrian(ego_state, x_history, y_history, measurement_data, pedestrians_info, bp):
+    '''
+    compute the bounding box on the ego-vehicle's front bumper in order to check if there are collisions with pedestrian and perform emergency
+    brake.
+    '''
+    ego_ori = ego_state[2]
+    dx = x_history[-1] - x_history[-2]
+    dy = y_history[-1] - y_history[-2]
+
+    #compute the offset increment to shift the center of bounding box of one meter according to the ego-vehicle orientation
+    if dx < -0.1:
+        offset_increment_x = -1
+    elif dx > 0.1:
+        offset_increment_x = 1
+    else:
+        offset_increment_x = 0
+    if dy < -0.1:
+        offset_increment_y = -1
+    elif dy > 0.1:
+        offset_increment_y = 1
+    else:
+        offset_increment_y = 0
+
+    BB_RADIUS_X,BB_RADIUS_Y=3,3
+    #bounding box parameters if the ego-vehicle is turning
+    if abs(dy) > 0.1 and abs(dx) > 0.1:
+        BB_RADIUS_X = 3
+        BB_RADIUS_Y = 3
+    #bounding box parameters if the ego-vehicle is not turning
+    elif abs(dx) > 0.1:
+        if bp._obstacle:
+            #bounding box parameters if the ego-vehicle is in DANGEROUS state
+            BB_RADIUS_X = 3
+            BB_RADIUS_Y = 3
+        else:
+            #bounding box parameters if the ego-vehicle is not in DANGEROUS state
+            BB_RADIUS_X = 7
+            BB_RADIUS_Y = 3
+    elif abs(dy) > 0.1:
+        if bp._obstacle:
+            #bounding box parameters if the ego-vehicle is in DANGEROUS state
+            BB_RADIUS_Y = 3
+            BB_RADIUS_X = 3
+        else:
+            #bounding box parameters if the ego-vehicle is not in DANGEROUS state
+            BB_RADIUS_Y = 7
+            BB_RADIUS_X = 3
+
+    x_center_bb = ego_state[0] \
+                  + measurement_data.player_measurements.bounding_box.extent.x * cos(ego_ori)+\
+                  offset_increment_x
+
+    y_center_bb = ego_state[1] \
+                  + measurement_data.player_measurements.bounding_box.extent.y * sin(ego_ori)+ \
+                  offset_increment_y
+
+    xmin, xmax, ymin, ymax = x_center_bb - BB_RADIUS_X, x_center_bb + BB_RADIUS_X, y_center_bb - BB_RADIUS_Y, y_center_bb + BB_RADIUS_Y
+
+    #check if a pedestrian with no parallel orientation is within the bounding box
+    for p in pedestrians_info:
+        p_ori = p[1]
+        ped_angle = abs(atan2(sin(ego_ori - p_ori), cos(ego_ori - p_ori))) * 180 / pi
+        p_x, p_y = p[0].x, p[0].y
+        if 10 <= ped_angle <= 170:
+
+            if xmin < p_x < xmax and ymin < p_y < ymax:
+                bp._handbrake = True
+                bp._obstacle = True
+        else:
+             dist=np.sqrt((p_x-x_center_bb-offset_increment_x)**2+(p_y-y_center_bb-offset_increment_y)**2)
+             if dist<=1.5:
+                 bp._handbrake = True
+                 bp._obstacle = True
+
+
+
+def check_collision_intersections(bp, cars_collision, in_intersection, percentage=0.7):
+    '''
+    Predict if there could be collisions in an intersection and perform emergency brake.
+    '''
+    if len(cars_collision) > 0 and in_intersection:
+        cnt_collided_path = 0
+        for i in range(len(cars_collision)):
+            if not cars_collision[i]:
+                cnt_collided_path += 1
+        if cnt_collided_path >= len(cars_collision) * percentage:
+            bp._handbrake = True
+
+def update_obstacles(bp, measurement_data,current_x,current_y,ego_state):
+    '''
+    Update all the data of the dynamic obstacles around the ego-vehicle, i.e. orientation and position.
+    If a vehicle has its orientation in parallel to that of the ego-vehicle it is considered as a potential lead_vehicle and
+    in particular if its distance is less at 10 meters, then the emergency brake  is activated.
+    '''
+
+    lead_car_state = []
+    bp._follow_lead_vehicle = False
+    obstacles = np.empty((0, 2), dtype=float)
+    pedestrians = np.empty((0, 2), dtype=float)
+    pedestrians_info = []
+    cars = np.empty((0, 2), dtype=float)
+    for agent in measurement_data.non_player_agents:
+        loc = agent.vehicle.transform.location
+        #consider only the agent which are cars and within the square of dimension MAP_OBSTACLE_THRESHOLD around ego_vehicle position
+        if agent.HasField('vehicle') and (
+                current_x - MAP_OBSTACLE_THRESHOLD < loc.x < current_x + MAP_OBSTACLE_THRESHOLD) and (
+                current_y - MAP_OBSTACLE_THRESHOLD < loc.y < current_y + MAP_OBSTACLE_THRESHOLD):
+            dim = agent.vehicle.bounding_box.extent
+            ori = agent.vehicle.transform.rotation
+            vehicle_angle = abs(atan2(sin(ego_state[2] - ori.yaw * pi / 180), cos(ego_state[2] - ori.yaw * pi / 180)))
+            if (bp._follow_lead_vehicle == False and vehicle_angle * 180 / pi < MAP_ANGLE_THRESHOLD):
+                bp._follow_lead_vehicle_lookahead = LEAD_VEHICLE_LOOKAHEAD
+                bp.check_for_lead_vehicle(ego_state, [loc.x, loc.y])
+            if (bp._follow_lead_vehicle == True and len(lead_car_state) == 0):
+                bp._follow_lead_vehicle = False
+                bp._follow_lead_vehicle_lookahead = LEAD_VEHICLE_ACTIVATION
+                bp.check_for_lead_vehicle(ego_state, [loc.x, loc.y])
+                if (bp._follow_lead_vehicle == True):
+                    lead_car_state = [loc.x, loc.y, agent.vehicle.forward_speed]
+                    dist_lead_car = np.sqrt((loc.x - ego_state[0]) ** 2 + (loc.y - ego_state[1]) ** 2)
+                    if dist_lead_car < 10:
+                        bp._handbrake = True
+            else:
+                obstacles = np.vstack((obstacles, np.array(obstacle_to_world(loc, dim, ori))))
+                cars = np.vstack((cars, np.array(obstacle_to_world(loc, dim, ori))))
+
+        loc = agent.pedestrian.transform.location
+        #consider only the agent which are pedestrians and within the square of dimension MAP_OBSTACLE_THRESHOLD around ego_vehicle position
+        if agent.HasField('pedestrian') and (
+                current_x - MAP_OBSTACLE_THRESHOLD < loc.x < current_x + MAP_OBSTACLE_THRESHOLD) and (
+                current_y - MAP_OBSTACLE_THRESHOLD < loc.y < current_y + MAP_OBSTACLE_THRESHOLD):
+            dim = agent.pedestrian.bounding_box.extent
+            ori = agent.pedestrian.transform.rotation
+            pedestrians_info.append([loc, ori.yaw * pi / 180])
+            pedestrians = np.vstack((pedestrians, np.array(obstacle_to_world(loc, dim, ori))))
+            obstacles = np.vstack((obstacles, np.array(obstacle_to_world(loc, dim, ori))))
+    return obstacles, pedestrians_info, pedestrians, cars, lead_car_state
+
+
+
+def manage_intersection(intersection_rectangles, ego_state,measurement_data):
+    '''
+    verify if the ego-vehicle's front bumper is inside the bounding box built for the intersections.
+    '''
+    ego_ori=ego_state[2]
+    for rectangle in intersection_rectangles:
+        ego_head_x = ego_state[0] + measurement_data.player_measurements.bounding_box.extent.x * cos(ego_ori)
+        ego_head_y = ego_state[1] + measurement_data.player_measurements.bounding_box.extent.x * sin(ego_ori)
+
+        xmin, xmax, ymin, ymax = rectangle
+        if xmin < ego_head_x < xmax and ymin < ego_head_y < ymax:
+            return True
+    return False
+
+
+def predict_pedestrian_collisions(pedestrian_collision_check_array, pedestrians_info, ego_state,DELTA_ORIENTATION):
+    '''
+    Considering all the paths from the Local Planner, if the pedestrians are noticed on the outermost paths and
+    have an orientation with values contained in a certain range of possible values, then the collision is predicted;
+    otherwise, if the pedestrians are noticed by the central paths regardless of their orientation,then the collision is predicted.
+    '''
+
+    #we use a parallel collision array named is_active_collision to predict the collisions.
+    if len(pedestrian_collision_check_array) >= 3:
+        is_active_collision = [False] * len(pedestrian_collision_check_array)
+        mid = int(len(is_active_collision) / 2)
+        is_active_collision[mid], is_active_collision[mid - 1], is_active_collision[mid + 1] = True, True, True
+    else:
+        is_active_collision = [True] * len(pedestrian_collision_check_array)
+
+    if False in pedestrian_collision_check_array:
+        if len(pedestrian_collision_check_array) >= 3:
+            for p in pedestrians_info:
+                p_x, p_y, p_ori = p[0].x, p[0].y, p[1]
+                ego_ori = ego_state[2]
+                #compute the angle between ego_vehicle and pedestrian p
+                ped_angle = abs(atan2(sin(ego_ori - p_ori), cos(ego_ori - p_ori))) * 180 / pi
+                #if ped_angle is in [45°,135°] then is going to cross the road
+                if 90 - DELTA_ORIENTATION <= ped_angle <= 90 + DELTA_ORIENTATION:
+                    for i in range(1, mid):
+                        if not is_active_collision[i]:
+                            is_active_collision[i] = True
+                    for i in range(len(is_active_collision) - 2, mid, -1):
+                        if not is_active_collision[i]:
+                            is_active_collision[i] = True
+
+        for i in range(len(pedestrian_collision_check_array)):
+        #there is a predicted collision if in pedestrian_collision_chek_array[i] is False and is_active_collision[i] is True
+            if not pedestrian_collision_check_array[i] and is_active_collision[i]:
+                return True,is_active_collision
+
+    return False,is_active_collision
+
 
 def make_carla_settings(args):
     """Make a CarlaSettings object with the settings we need.
@@ -293,10 +523,6 @@ def make_carla_settings(args):
     camera0.set_rotation(cam_yaw, cam_pitch, cam_roll)
 
     settings.add_sensor(camera0)
-
-     #prova parametri
-    camera_width=416
-    camera_height=416
 
     # DEPTH Camera
     camera1 = Camera("DepthCamera", PostProcessing="Depth")
@@ -639,16 +865,19 @@ def exec_waypoint_nav_demo(args):
         for i in range(len(intersection_nodes_world)):
             intersection_nodes_world[i] = intersection_nodes_world[i][:2]
 
-        ######################################################################################
-        indx_intersections=[]
+        #build a square for each waypoints that correspond to the road intersections
+        intersection_rectangles=[]
+        offset=7
         for i in range(len(waypoints_native)):
             wp = waypoints_native[i]
             for inters in intersection_nodes_world:
                 inters_x = inters[0]
                 inters_y = inters[1]
                 if wp[0] == inters_x and wp[1] == inters_y:
-                    indx_intersections.append(i)
-        ##########################################################################################
+                    xmin,xmax,ymin,ymax=wp[0]-offset,wp[0]+offset,wp[1]-offset,wp[1]+offset
+                    rectangle=[xmin,xmax,ymin,ymax]
+                    intersection_rectangles.append(rectangle)
+
 
         intersection_pair = []
         turn_cooldown = 0
@@ -691,7 +920,7 @@ def exec_waypoint_nav_demo(args):
                     middle_point = [(start_intersection[0] + end_intersection[0]) /2,  (start_intersection[1] + end_intersection[1]) /2]
 
                     turn_angle = math.atan2((end_intersection[1] - start_intersection[1]),(start_intersection[0] - end_intersection[0]))
-                    print(turn_angle,  pi / 4, middle_point[0] - center_intersection[0] < 0)
+                    #print(turn_angle,  pi / 4, middle_point[0] - center_intersection[0] < 0)
 
                     turn_adjust = 0 < turn_angle < pi / 2 and middle_point[0] - center_intersection[0] < 0
                     turn_adjust_2 =  pi / 2 < turn_angle < pi and middle_point[0] - center_intersection[0] < 0
@@ -738,6 +967,7 @@ def exec_waypoint_nav_demo(args):
 
                         waypoint_on_lane[0] = center_x + r * cos(theta)
                         waypoint_on_lane[1] = center_y + r * sin(theta)
+                        waypoint_on_lane[1] = center_y + r * sin(theta)
                         waypoint_on_lane[2] = turn_speed
 
                         waypoints.append(waypoint_on_lane)
@@ -758,6 +988,7 @@ def exec_waypoint_nav_demo(args):
                 waypoints.append(waypoint_on_lane)
 
                 previuos_waypoint = waypoint
+
 
         waypoints = np.array(waypoints)
 
@@ -889,8 +1120,9 @@ def exec_waypoint_nav_demo(args):
                                         A_MAX,
                                         SLOW_SPEED,
                                         STOP_LINE_BUFFER)
+
         bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
-                                                    LEAD_VEHICLE_LOOKAHEAD,model,desired_speed,indx_intersections)
+                                                    LEAD_VEHICLE_LOOKAHEAD)
 
         #############################################
         # Scenario Execution Loop
@@ -909,6 +1141,9 @@ def exec_waypoint_nav_demo(args):
         prev_collision_vehicles    = 0
         prev_collision_pedestrians = 0
         prev_collision_other       = 0
+
+        # Initialize collision prediction
+        predict_collision = False
 
         for frame in range(TOTAL_EPISODE_FRAMES):
 
@@ -955,7 +1190,8 @@ def exec_waypoint_nav_demo(args):
             # to be operating at a frequency that is a division to the
             # simulation frequency.
             if frame % LP_FREQUENCY_DIVISOR == 0:
-                print(f"handbrake {bp._handbrake}")
+
+                #retreive the camera data from Carla sensor_data
                 depth_data = sensor_data.get('DepthCamera', None)
                 segmentation_data = sensor_data.get('SegmentationCamera', None)
                 # Compute open loop speed estimate.
@@ -964,55 +1200,23 @@ def exec_waypoint_nav_demo(args):
                 # Calculate the goal state set in the local frame for the local planner.
                 # Current speed should be open loop for the velocity profile generation.
                 ego_state = [current_x, current_y, current_yaw, open_loop_speed]
+                print(f"EGO STATE -> X : {ego_state[0]} | Y : {ego_state[1]} | YAW : {ego_state[2]} SPEED : {ego_state[3]} ")
 
 
                 # Set lookahead based on current speed.
 
                 bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
 
+                #compute depth and state of traffic light
                 tl_depth=MAX_DEPTH
-                tl_state, tl_box = check_for_traffic_light(bp, ego_state, sensor_data=sensor_data,camera_parameters=camera_parameters)
-
+                tl_state, tl_box = check_for_traffic_light(sensor_data=sensor_data)
                 if tl_state !=2 and segmentation_data is not None:
                     tl_depth=compute_depth_tl(segmentation_data,depth_data,tl_box)
-
-                bp.transition_state(waypoints, ego_state, current_speed,tl_depth,tl_state,segmentation_data,camera_parameters['width'],camera_parameters['height'])
+                #perform the BEHAVIOURAL PLANNER state transition
+                bp.transition_state(waypoints, ego_state,tl_depth,tl_state)
 
                 # Update the obstacles list and check to see if we need to follow the lead vehicle.
-                lead_car_state = []
-                bp._follow_lead_vehicle = False
-                obstacles = np.empty((0,2), dtype=float)
-                pedestrians = np.empty((0, 2), dtype=float)
-                pedestrians_info=[]
-                cars=np.empty((0, 2), dtype=float)
-                for agent in measurement_data.non_player_agents:
-                    loc = agent.vehicle.transform.location
-                    if agent.HasField('vehicle') and (current_x-MAP_OBSTACLE_THRESHOLD < loc.x < current_x+MAP_OBSTACLE_THRESHOLD) and (current_y-MAP_OBSTACLE_THRESHOLD < loc.y < current_y+MAP_OBSTACLE_THRESHOLD):
-                        dim = agent.vehicle.bounding_box.extent
-                        ori = agent.vehicle.transform.rotation
-                        vehicle_angle=abs(atan2(sin(ego_state[2]-ori.yaw * pi / 180), cos(ego_state[2]-ori.yaw * pi / 180)))
-                        if (bp._follow_lead_vehicle == False and vehicle_angle * 180 / pi < MAP_ANGLE_THRESHOLD):
-                            bp._follow_lead_vehicle_lookahead=LEAD_VEHICLE_LOOKAHEAD
-                            bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
-                        if (bp._follow_lead_vehicle == True and len(lead_car_state)==0):
-                            bp._follow_lead_vehicle = False
-                            bp._follow_lead_vehicle_lookahead=LEAD_VEHICLE_ACTIVATION
-                            bp.check_for_lead_vehicle(ego_state, [loc.x,loc.y])
-                            if (bp._follow_lead_vehicle == True):
-                                lead_car_state = [loc.x, loc.y, agent.vehicle.forward_speed]
-                                dist_lead_car = np.sqrt((loc.x - ego_state[0]) ** 2 + (loc.y - ego_state[1]) ** 2)
-                                if dist_lead_car < 6:
-                                    bp._handbrake = True
-                        else:
-                            obstacles=np.vstack((obstacles,np.array(obstacle_to_world(loc, dim, ori))))
-                            cars = np.vstack((cars, np.array(obstacle_to_world(loc, dim, ori))))
-                    loc = agent.pedestrian.transform.location
-                    if agent.HasField('pedestrian') and (current_x-MAP_OBSTACLE_THRESHOLD < loc.x < current_x+MAP_OBSTACLE_THRESHOLD) and (current_y-MAP_OBSTACLE_THRESHOLD < loc.y < current_y+MAP_OBSTACLE_THRESHOLD):
-                        dim = agent.pedestrian.bounding_box.extent
-                        ori = agent.pedestrian.transform.rotation
-                        pedestrians_info.append([loc,ori.yaw * pi / 180])
-                        pedestrians = np.vstack((pedestrians,np.array(obstacle_to_world(loc, dim, ori))))
-                        obstacles = np.vstack((obstacles, np.array(obstacle_to_world(loc, dim, ori))))
+                obstacles,pedestrians_info,pedestrians,cars,lead_car_state=update_obstacles(bp,measurement_data,current_x,current_y,ego_state)
 
                 # Compute the goal state set from the behavioural planner's computed goal state.
                 goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
@@ -1020,87 +1224,45 @@ def exec_waypoint_nav_demo(args):
                 # Calculate planned paths in the local frame.
                 paths, path_validity = lp.plan_paths(goal_state_set)
 
-
                 # Transform those paths back to the global frame.
                 paths = local_planner.transform_paths(paths, ego_state)
 
-                # Perform collision checking.
-                collision_check_array = lp._collision_checker.collision_check(paths, cars)
+                # Perform  pedestrian collision checking.
                 pedestrian_collision_check_array=lp._collision_checker.collision_check_pedestrian(paths, pedestrians)
+                bp._obstacle,is_active_collision=predict_pedestrian_collisions(pedestrian_collision_check_array,pedestrians_info,ego_state,DELTA_ORIENTATION)
 
-                print('pedestrian check array :',pedestrian_collision_check_array)
+                # check if the ego_vehicle is in an intersection
+                in_intersection=manage_intersection(intersection_rectangles, ego_state,measurement_data)
+                if in_intersection:
+                    bp.set_lookahead(30)
 
-                #print('cars check array :',collision_check_array)
-                cars_collision=np.array(collision_check_array)
-
-                bp._obstacle = False
-
-                if len(pedestrian_collision_check_array)>=3:
-                    is_active_collision = [False] * len(pedestrian_collision_check_array)
-                    mid=int(len(is_active_collision)/2)
-                    is_active_collision[mid],is_active_collision[mid-1],is_active_collision[mid+1]=True,True,True
-                else:
-                    is_active_collision = [True] * len(pedestrian_collision_check_array)
-
-                if False in pedestrian_collision_check_array:  # or (np.all(cars_collision==False)):
-                    if len(pedestrian_collision_check_array) >= 3:
-                        for p in pedestrians_info:
-
-                            p_x,p_y,p_ori=p[0].x,p[0].y,p[1]
-                            ego_ori = ego_state[2]
-                            ped_angle = abs(atan2(sin(ego_ori - p_ori), cos(ego_ori - p_ori))) * 180/pi
-
-                            if ped_angle >= 90 - DELTA_ORIENTATION and ped_angle <= 90 + DELTA_ORIENTATION:
-
-                                for i in range(1, mid):
-                                    if not is_active_collision[i]:
-                                        is_active_collision[i] = True
-                                for i in range(len(is_active_collision)-2,mid,-1):
-                                    if not is_active_collision[i]:
-                                        is_active_collision[i] = True
-
-                    for i in range(len(pedestrian_collision_check_array)):
-                        if not pedestrian_collision_check_array[i] and is_active_collision[i]:
-                            bp._obstacle = True
-
-                print('is_activated:', is_active_collision)
-
+                #Perform  cars collision checking.
+                collision_check_array = lp._collision_checker.collision_check(paths, cars)
+                cars_collision = np.array(collision_check_array)
 
                 # Compute the best local path.
                 best_index = lp._collision_checker.select_best_path_index(paths, collision_check_array, bp._goal_state)
                 # If no path was feasible, continue to follow the previous best path.
                 if best_index == None:
                     best_path = lp._prev_best_path
-                    if  np.all(cars_collision==False):
-                        if len(paths)>0:
-                            print('ho scelto il path a destra')
-                            best_path=paths[-1]
-
                 else:
                     best_path = paths[best_index]
                     lp._prev_best_path = best_path
 
+                #predict the collisions between the ego_vehicle and the other cars in an intersection
+                check_collision_intersections(bp,cars_collision,in_intersection,percentage=0.7)
+
+                #Perform  pedestrian emergency brake if needed
+                emergency_break_pedestrian(ego_state, x_history, y_history, measurement_data, pedestrians_info,bp)
 
                 if best_path is not None:
                     # Compute the velocity profile for the path, and compute the waypoints.
                     desired_speed = bp._goal_state[2]
                     decelerate_to_tl = bp._state == behavioural_planner.TRAFFICLIGHT_STOP
+                    follow_lead_vehicle=bp._follow_lead_vehicle
+                    emergency_break=bp._handbrake
 
-                    if bp._obstacle and bp._follow_lead_vehicle:
-                        ped_x,ped_y=loc.x,loc.y
-                        ego_x,ego_y=ego_state[0],ego_state[1]
-                        lead_x,lead_y=lead_car_state[0],lead_car_state[1]
-                        dist_lead=np.sqrt((lead_x-ego_x)**2+(lead_y-ego_y)**2)
-                        dist_ped=np.sqrt((ped_x-ego_x)**2+(ped_y-ego_y)**2)
-                        if dist_ped<dist_lead:
-                            bp._follow_lead_vehicle=False
-                        else:
-                            bp._obstacle=False
-
-                    print("collision ", bp._obstacle)
-                    print("lead vehicle: ", bp._follow_lead_vehicle)
-
-                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_tl, lead_car_state, bp._follow_lead_vehicle)
+                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_tl, lead_car_state,follow_lead_vehicle,emergency_break)
 
 
                     if local_waypoints != None:
@@ -1143,6 +1305,11 @@ def exec_waypoint_nav_demo(args):
                         # Update the other controller values and controls
                         controller.update_waypoints(wp_interp)
 
+                print(f"handbrake : {bp._handbrake}")
+                print(f"in intersection : {in_intersection}")
+                print(f"pedestrian obstacle : {bp._obstacle}")
+                print(f"lead vehicle : {bp._follow_lead_vehicle}")
+                print('----------------')
             ###
             # Controller Update
             ###
@@ -1158,22 +1325,10 @@ def exec_waypoint_nav_demo(args):
                 cmd_steer = 0.0
                 cmd_brake = 0.0
 
-            # Brake if there is a pedestrian close by
-
-            if bp._obstacle:
-                ego_ori=ego_state[2]
-                for p in pedestrians_info:
-                    p_ori=p[1]
-                    ped_angle = abs(atan2(sin(ego_ori - p_ori), cos(ego_ori - p_ori))) * 180 / pi
-                    if ped_angle >= 90 - DELTA_ORIENTATION and ped_angle <= 90 + DELTA_ORIENTATION or True:
-                        p_x,p_y=p[0].x,p[0].y
-                        dist_ped=np.sqrt((p_x-ego_state[0])**2+(p_y-ego_state[1])**2)
-                        if dist_ped <= 4.5:
-                            bp._handbrake=True
-
-            if bp._handbrake :
+            # perform emergency brake
+            if bp._handbrake:
+                cmd_throttle=0.0
                 cmd_brake = 1
-
 
             # Skip the first frame or if there exists no local paths
             if skip_first_frame and frame == 0:
@@ -1265,7 +1420,7 @@ def exec_waypoint_nav_demo(args):
                                  steer=cmd_steer,
                                  brake=cmd_brake)
 
-            print('---------------------------------------------')
+
             # Find if reached the end of waypoint. If the car is within
             # DIST_THRESHOLD_TO_LAST_WAYPOINT to the last waypoint,
             # the simulation will end.
@@ -1294,7 +1449,7 @@ def exec_waypoint_nav_demo(args):
         write_trajectory_file(x_history, y_history, speed_history, time_history,
                               collided_flag_history)
         write_collisioncount_file(collided_flag_history)
-    
+
 def main():
     """Main function.
 
@@ -1359,46 +1514,6 @@ def main():
         except TCPConnectionError as error:
             logging.error(error)
             time.sleep(1)
-
-
-def compute_depth_tl(segmentation_data, depth_data, tl_box):
-    segmentation_data = labels_to_array(segmentation_data)
-
-    # vedere perchè non fa segmentation data
-    top_left_point, bottom_right_point = (tl_box.xmin, tl_box.ymin), (tl_box.xmax, tl_box.ymax)
-    top_left_x = int(top_left_point[0] * 416)
-    bottom_right_x = int(bottom_right_point[0] * 416)
-    top_left_y = int(top_left_point[1] * 416)
-    bottom_right_y = int(bottom_right_point[1] * 416)
-    image_w,image_h=camera_parameters['width'],camera_parameters['height']
-
-
-    if (top_left_x > image_w ): top_left_x = image_w
-    if (bottom_right_x > image_w): bottom_right_x = image_w
-    if (top_left_y > image_h): top_left_y = image_h
-    if ( bottom_right_y > image_h):  bottom_right_y = image_h
-    if (top_left_x < 0 ): top_left_x = 0
-    if (bottom_right_x < 0): bottom_right_x = 0
-    if (top_left_y < 0): top_left_y = 0
-    if ( bottom_right_y < 0):  bottom_right_y = 0
-
-    found_tl=False
-    for i in range(top_left_x, bottom_right_x):
-        for j in range(top_left_y, bottom_right_y):
-            if segmentation_data[j][i] == 12:
-                found_tl=True
-                break
-        if segmentation_data[j][i] == 12:
-            break
-
-    #####depth_data#####
-    depth_data = depth_to_array(depth_data)
-    if found_tl:
-        tl_depth = depth_data[j][i] * 1000  # Consider depth in meters
-    else:
-        tl_depth=1000
-    return tl_depth
-
 
 if __name__ == '__main__':
 
